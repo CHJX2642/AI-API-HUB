@@ -34,7 +34,10 @@
       "Bash(curl -s -X POST http://127.0.0.1:5000/api/ai/import -H \"Content-Type: application/json\" -d \"{\\\\\"providers\\\\\":[{\\\\\"name\\\\\":\\\\\"openai\\\\\",\\\\\"display_name\\\\\":\\\\\"OpenAI\\\\\",\\\\\"base_url\\\\\":\\\\\"https://api.openai.com/v1\\\\\",\\\\\"description\\\\\":\\\\\"GPT\\\\\",\\\\\"category\\\\\":\\\\\"international\\\\\",\\\\\"models\\\\\":[{\\\\\"model_id\\\\\":\\\\\"gpt-4o\\\\\",\\\\\"display_name\\\\\":\\\\\"GPT-4o\\\\\",\\\\\"max_tokens\\\\\":128000,\\\\\"supports_vision\\\\\":true,\\\\\"supports_function_calling\\\\\":true,\\\\\"price_input\\\\\":0.005,\\\\\"price_output\\\\\":0.015}]}]}\")",
       "Bash(git push *)",
       "Bash(ssh-keygen *)",
-      "Bash(pip show *)"
+      "Bash(pip show *)",
+      "Bash(git config *)",
+      "Bash(git remote *)",
+      "Bash(ssh *)"
     ]
   }
 }
