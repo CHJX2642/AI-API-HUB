@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python app.py)",
+      "Bash(python *)",
+      "Bash(pip install *)",
+      "Bash(D:\\\\Users\\\\21023\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe *)",
+      "Bash(sqlite3 \"C:/Users/21023/ai-api-hub/ai_api_hub.db\" \".schema\")",
+      "Bash(sqlite3 \"C:/Users/21023/ai-api-hub/ai_api_hub.db\" \".tables\")",
+      "Bash(\"D:\\\\Users\\\\21023\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\" -m pip install flask==3.0.0 Pillow)",
+      "Bash(\"D:\\\\Users\\\\21023\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\" run.py)",
+      "Bash(curl -s -X POST http://127.0.0.1:5000/api/providers -H \"Content-Type: application/json\" -d '{\"name\":\"openai\",\"display_name\":\"OpenAI\",\"base_url\":\"https://api.openai.com/v1\",\"description\":\"GPT系列模型\",\"category\":\"international\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:5000/api/providers/1/models -H \"Content-Type: application/json\" -d '{\"model_id\":\"gpt-4o\",\"display_name\":\"GPT-4o\",\"max_tokens\":128000,\"supports_vision\":1,\"supports_function_calling\":1,\"price_input\":0.005,\"price_output\":0.015}')",
+      "Bash(curl -s -X POST http://127.0.0.1:5000/api/providers/1/keys -H \"Content-Type: application/json\" -d '{\"key_name\":\"测试密钥\",\"api_key\":\"sk-test12345678\",\"notes\":\"测试用\"}')",
+      "Bash(curl -s http://127.0.0.1:5000/api/providers/1)",
+      "Bash(curl -s http://127.0.0.1:5000/api/models)",
+      "Bash(curl -s http://127.0.0.1:5000/api/keys)",
+      "Bash(curl -s -X PUT http://127.0.0.1:5000/api/keys/1 -H \"Content-Type: application/json\" -d '{\"key_name\":\"更新后的密钥\",\"api_key\":\"sk-updated12345\",\"notes\":\"已更新\"}')",
+      "Bash(curl -s http://127.0.0.1:5000/api/stats)",
+      "Bash(curl -s -X POST http://127.0.0.1:5000/api/providers -H \"Content-Type: application/json\" -d \"{\\\\\"name\\\\\":\\\\\"openai\\\\\",\\\\\"display_name\\\\\":\\\\\"OpenAI\\\\\",\\\\\"base_url\\\\\":\\\\\"https://api.openai.com/v1\\\\\",\\\\\"description\\\\\":\\\\\"GPT models\\\\\",\\\\\"category\\\\\":\\\\\"international\\\\\"}\")",
+      "Bash(curl -s -X POST http://127.0.0.1:5000/api/providers/2/models -H \"Content-Type: application/json\" -d \"{\\\\\"model_id\\\\\":\\\\\"gpt-4o\\\\\",\\\\\"display_name\\\\\":\\\\\"GPT-4o\\\\\",\\\\\"max_tokens\\\\\":128000,\\\\\"supports_vision\\\\\":1}\")",
+      "Bash(curl -s -X POST http://127.0.0.1:5000/api/providers/2/keys -H \"Content-Type: application/json\" -d \"{\\\\\"key_name\\\\\":\\\\\"test-key\\\\\",\\\\\"api_key\\\\\":\\\\\"sk-test12345678\\\\\",\\\\\"notes\\\\\":\\\\\"test\\\\\"}\")",
+      "Bash(curl -s http://127.0.0.1:5000/api/providers/2)",
+      "Bash(curl -s -X PUT http://127.0.0.1:5000/api/keys/2 -H \"Content-Type: application/json\" -d \"{\\\\\"key_name\\\\\":\\\\\"updated-key\\\\\",\\\\\"api_key\\\\\":\\\\\"sk-updated\\\\\",\\\\\"notes\\\\\":\\\\\"updated\\\\\"}\")",
+      "Bash(pkill -f \"python.*run.py\")",
+      "Bash(curl -s -X POST http://127.0.0.1:5000/api/providers/1/models -H \"Content-Type: application/json\" -d \"{\\\\\"model_id\\\\\":\\\\\"gpt-4o\\\\\",\\\\\"display_name\\\\\":\\\\\"GPT-4o\\\\\",\\\\\"max_tokens\\\\\":128000,\\\\\"supports_vision\\\\\":1,\\\\\"price_input\\\\\":0.005,\\\\\"price_output\\\\\":0.015}\")",
+      "Bash(curl -s -X POST http://127.0.0.1:5000/api/providers/1/keys -H \"Content-Type: application/json\" -d \"{\\\\\"key_name\\\\\":\\\\\"test-key\\\\\",\\\\\"api_key\\\\\":\\\\\"sk-test12345678\\\\\",\\\\\"notes\\\\\":\\\\\"test note\\\\\"}\")",
+      "Bash(curl -s -X PUT http://127.0.0.1:5000/api/keys/1 -H \"Content-Type: application/json\" -d \"{\\\\\"key_name\\\\\":\\\\\"updated-key\\\\\",\\\\\"api_key\\\\\":\\\\\"sk-updated\\\\\",\\\\\"notes\\\\\":\\\\\"updated\\\\\"}\")",
+      "Bash(curl -s \"http://127.0.0.1:5000/api/providers?search=open\")",
+      "Bash(curl -s http://127.0.0.1:5000/api/settings)",
+      "Bash(curl -s -X PUT http://127.0.0.1:5000/api/settings -H \"Content-Type: application/json\" -d \"{\\\\\"ai_base_url\\\\\":\\\\\"https://api.openai.com/v1\\\\\",\\\\\"ai_api_key\\\\\":\\\\\"sk-test\\\\\",\\\\\"ai_model\\\\\":\\\\\"gpt-4o\\\\\"}\")",
+      "Bash(curl -s -X PUT http://127.0.0.1:5000/api/settings -H \"Content-Type: application/json\" -d \"{\\\\\"ai_base_url\\\\\":\\\\\"\\\\\",\\\\\"ai_api_key\\\\\":\\\\\"\\\\\",\\\\\"ai_model\\\\\":\\\\\"\\\\\"}\")",
+      "Bash(curl -s -X POST http://127.0.0.1:5000/api/ai/parse -H \"Content-Type: application/json\" -d \"{\\\\\"content\\\\\":\\\\\"test\\\\\"}\")",
+      "Bash(curl -s -X POST http://127.0.0.1:5000/api/ai/import -H \"Content-Type: application/json\" -d \"{\\\\\"providers\\\\\":[{\\\\\"name\\\\\":\\\\\"openai\\\\\",\\\\\"display_name\\\\\":\\\\\"OpenAI\\\\\",\\\\\"base_url\\\\\":\\\\\"https://api.openai.com/v1\\\\\",\\\\\"description\\\\\":\\\\\"GPT\\\\\",\\\\\"category\\\\\":\\\\\"international\\\\\",\\\\\"models\\\\\":[{\\\\\"model_id\\\\\":\\\\\"gpt-4o\\\\\",\\\\\"display_name\\\\\":\\\\\"GPT-4o\\\\\",\\\\\"max_tokens\\\\\":128000,\\\\\"supports_vision\\\\\":true,\\\\\"supports_function_calling\\\\\":true,\\\\\"price_input\\\\\":0.005,\\\\\"price_output\\\\\":0.015}]}]}\")"
+    ]
+  }
+}

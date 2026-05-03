@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI API 大模型集合平台</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- 应用主容器：侧边栏 + 主内容区 -->
+    <div class="app-container">
+        <!-- 侧边栏导航 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>AI API Hub</h1>
+                <p>大模型API管理平台</p>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-page="dashboard">
+                    <span class="icon">&#x1F4CA;</span> 仪表盘
+                </a>
+                <a href="#" class="nav-item" data-page="providers">
+                    <span class="icon">&#x1F3E2;</span> API提供商
+                </a>
+                <a href="#" class="nav-item" data-page="models">
+                    <span class="icon">&#x1F916;</span> 模型列表
+                </a>
+                <a href="#" class="nav-item" data-page="keys">
+                    <span class="icon">&#x1F511;</span> API密钥
+                </a>
+                <a href="#" class="nav-item" data-page="ai-parse">
+                    <span class="icon">&#x1F9E0;</span> AI解析
+                </a>
+                <a href="#" class="nav-item" data-page="settings">
+                    <span class="icon">&#x2699;&#xFE0F;</span> AI设置
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button class="btn-add-provider" onclick="showAddProviderModal()">+ 添加提供商</button>
+            </div>
+        </aside>
+
+        <!-- 主内容区域 -->
+        <main class="main-content">
+            <!-- 仪表盘页面：统计卡片 + 类别筛选 + 提供商卡片网格 -->
+            <div id="dashboard-page" class="page active">
+                <h2>仪表盘</h2>
+                <!-- 统计数据卡片 -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-number" id="providers-count">0</div>
+                        <div class="stat-label">API提供商</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="models-count">0</div>
+                        <div class="stat-label">模型数量</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="keys-count">0</div>
+                        <div class="stat-label">API密钥</div>
+                    </div>
+                </div>
+                <!-- 类别筛选按钮组 -->
+                <div class="category-filter">
+                    <h3>按类别筛选</h3>
+                    <div class="filter-buttons">
+                        <button class="filter-btn active" data-category="all">全部</button>
+                        <button class="filter-btn" data-category="international">国外主流</button>
+                        <button class="filter-btn" data-category="domestic">国内主流</button>
+                        <button class="filter-btn" data-category="other">其他</button>
+                    </div>
+                </div>
+                <!-- 提供商卡片网格容器 -->
+                <div class="providers-grid" id="providers-grid"></div>
+            </div>
+
+            <!-- 提供商管理页面：搜索栏 + 提供商列表 -->
+            <div id="providers-page" class="page">
+                <div class="page-header">
+                    <h2>API提供商管理</h2>
+                    <div class="search-bar">
+                        <input type="text" id="provider-search" placeholder="搜索提供商..."
+                               onkeydown="if(event.key==='Enter') searchProviders()">
+                        <button onclick="searchProviders()">搜索</button>
+                    </div>
+                </div>
+                <div class="providers-list" id="providers-list"></div>
+            </div>
+
+            <!-- 模型列表页面：全局模型表格 -->
+            <div id="models-page" class="page">
+                <h2>模型列表</h2>
+                <div class="models-table-container">
+                    <table class="models-table">
+                        <thead>
+                            <tr>
+                                <th>提供商</th>
+                                <th>模型ID</th>
+                                <th>显示名称</th>
+                                <th>最大Token</th>
+                                <th>多模态</th>
+                                <th>函数调用</th>
+                                <th>输入价格</th>
+                                <th>输出价格</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="models-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- API 密钥管理页面 -->
+            <div id="keys-page" class="page">
+                <h2>API密钥管理</h2>
+                <div class="keys-list" id="keys-list"></div>
+            </div>
+
+            <!-- 提供商详情页面：信息 + 模型 + 密钥 -->
+            <div id="provider-detail-page" class="page">
+                <div class="detail-header">
+                    <button class="btn-back" onclick="showPage('providers')">&#x2190; 返回</button>
+                    <h2 id="detail-provider-name"></h2>
+                </div>
+                <div class="detail-content">
+                    <!-- 基本信息区块 -->
+                    <div class="detail-section">
+                        <h3>基本信息</h3>
+                        <div id="detail-info"></div>
+                    </div>
+                    <!-- 模型列表区块 -->
+                    <div class="detail-section">
+                        <div class="section-header">
+                            <h3>模型列表</h3>
+                            <button class="btn-small" onclick="showAddModelModal()">+ 添加模型</button>
+                        </div>
+                        <div id="detail-models"></div>
+                    </div>
+                    <!-- API 密钥区块 -->
+                    <div class="detail-section">
+                        <div class="section-header">
+                            <h3>API密钥</h3>
+                            <button class="btn-small" onclick="showAddKeyModal()">+ 添加密钥</button>
+                        </div>
+                        <div id="detail-keys"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI 解析页面：粘贴文档 → AI 识别 → 一键导入 -->
+            <div id="ai-parse-page" class="page">
+                <h2>AI 智能解析</h2>
+                <p class="page-desc">粘贴 API 文档或描述，AI 自动识别提供商和模型信息</p>
+                <div class="ai-parse-container">
+                    <!-- 输入区域 -->
+                    <div class="ai-input-section">
+                        <h3>输入文档内容</h3>
+                        <textarea id="ai-input" class="ai-textarea" placeholder="粘贴 API 文档、模型介绍、定价信息等内容...&#10;&#10;例如：&#10;OpenAI 提供 GPT-4o 模型，支持 128K 上下文，支持视觉和函数调用。&#10;输入价格 $0.005/1K tokens，输出价格 $0.015/1K tokens。&#10;API 地址：https://api.openai.com/v1"></textarea>
+                        <div class="ai-actions">
+                            <button class="btn-primary" id="btn-ai-parse" onclick="parseDocument()">&#x1F9E0; AI 解析</button>
+                            <button class="btn-secondary" onclick="clearAiInput()">清空</button>
+                        </div>
+                    </div>
+                    <!-- 解析结果区域 -->
+                    <div class="ai-result-section">
+                        <h3>解析结果</h3>
+                        <div id="ai-result" class="ai-result">
+                            <p class="ai-placeholder">解析结果将显示在这里...</p>
+                        </div>
+                        <div id="ai-import-actions" class="ai-import-actions" style="display:none;">
+                            <button class="btn-primary" onclick="importParsedData()">&#x1F4E5; 确认导入</button>
+                            <span id="ai-import-summary"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI 设置页面：配置 AI 服务 -->
+            <div id="settings-page" class="page">
+                <h2>AI 设置</h2>
+                <p class="page-desc">配置用于文档解析的 AI 服务（兼容 OpenAI 格式的 API）</p>
+                <div class="settings-form">
+                    <div class="form-group">
+                        <label>AI Base URL</label>
+                        <input type="text" id="setting-ai-base-url" placeholder="例: https://api.openai.com/v1">
+                        <small>OpenAI 格式的 API 地址，不要带 /chat/completions 后缀</small>
+                    </div>
+                    <div class="form-group">
+                        <label>AI API Key</label>
+                        <input type="password" id="setting-ai-api-key" placeholder="输入 API Key">
+                        <small>用于调用 AI 服务的密钥</small>
+                    </div>
+                    <div class="form-group">
+                        <label>AI 模型名</label>
+                        <input type="text" id="setting-ai-model" placeholder="例: gpt-4o、deepseek-chat、qwen-plus">
+                        <small>要使用的模型名称</small>
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn-primary" onclick="saveAISettings()">保存设置</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 全局模态框（复用于所有添加/编辑表单） -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal" id="modal">
+            <div class="modal-header">
+                <h3 id="modal-title"></h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- Toast 通知容器 -->
+    <div id="toast-container"></div>
+
+    <!-- 引入主逻辑 JS -->
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
