@@ -37,7 +37,16 @@
       "Bash(pip show *)",
       "Bash(git config *)",
       "Bash(git remote *)",
-      "Bash(ssh *)"
+      "Bash(ssh *)",
+      "Bash(curl *)",
+      "Bash(taskkill //F //IM python.exe)",
+      "Bash(FLASK_DEBUG=1 python run.py)",
+      "Bash(netstat -ano)",
+      "Bash(tasklist //FI \"PID eq 24468\")",
+      "Bash(tasklist //FI \"PID eq 42912\")",
+      "Bash(tasklist //FI \"PID eq 9196\")",
+      "Bash(taskkill //F //PID 24468)",
+      "Bash(taskkill //F //PID 42912)"
     ]
   }
 }

@@ -1133,3 +1133,17 @@ function clearAiInput() {
     document.getElementById('ai-import-actions').style.display = 'none';
     parsedData = null;
 }
+
+/**
+ * 关闭服务器
+ */
+async function shutdownServer() {
+    if (!confirm('确定要关闭服务器吗？关闭后需要重新启动程序。')) return;
+    try {
+        await fetch('/api/shutdown', { method: 'POST' });
+        document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-size:20px;color:#888;">服务器已关闭，可以关闭此页面</div>';
+    } catch {
+        fetch('/api/shutdown', { method: 'POST' }).catch(() => {});
+        document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-size:20px;color:#888;">服务器已关闭，可以关闭此页面</div>';
+    }
+}

@@ -696,6 +696,29 @@ def ai_import():
         conn.close()                                        # 确保关闭连接
 
 
+# ====================== 关闭服务路由 ======================
+
+def shutdown_server():
+    """优雅关闭 Flask 服务器"""
+    func = request.environ.get('werkzeug.server.shutdown')
+    if func is None:
+        raise RuntimeError('无法关闭服务器（非 werkzeug 模式）')
+    func()
+
+
+@app.route('/api/shutdown', methods=['POST'])
+def shutdown():
+    """关闭服务器的 API 端点"""
+    try:
+        shutdown_server()
+        return jsonify({'message': '服务器正在关闭...'})
+    except Exception as e:
+        # werkzeug.server.shutdown 不可用时，直接退出进程
+        import threading
+        threading.Thread(target=lambda: os._exit(0), daemon=True).start()
+        return jsonify({'message': '服务器正在关闭...'})
+
+
 # 程序入口：直接运行 app.py 时启动开发服务器
 if __name__ == '__main__':
     init_db()                                               # 初始化数据库表结构
