@@ -62,6 +62,12 @@ def build():
     exe_path = os.path.join(dist_dir, 'AI-API-Hub.exe')
     print(f"\n打包完成！可执行文件位置: {exe_path}")
 
+    # 复制数据库文件到 dist 目录（如果存在）
+    db_src = os.path.join(work_dir, 'ai_api_hub.db')
+    if os.path.exists(db_src):
+        shutil.copy2(db_src, os.path.join(dist_dir, 'ai_api_hub.db'))
+        print("已复制数据库文件到 dist 目录")
+
 
 if __name__ == '__main__':
     build()
