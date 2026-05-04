@@ -1,44 +1,81 @@
 # -*- coding: utf-8 -*-
-# AI API Hub — 应用启动入口
-# 负责初始化数据库、打印启动信息、打开浏览器、启动 Flask 服务器
+# AI API Hub — 应用启动入口 + 所有可配置参数
 
-import sys                    # 系统接口，用于路径设置
-import os                     # 操作系统接口，用于路径处理
-import webbrowser             # 浏览器控制模块，用于自动打开页面
-import threading              # 多线程模块，用于后台打开浏览器
-import time                   # 时间模块，用于延迟等待服务器启动
+import sys
+import os
+import webbrowser
+import threading
+import time
 
-# 将脚本所在目录加入 Python 路径，确保打包后也能正确导入模块
+# 将脚本所在目录加入 Python 路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# 从 app 模块导入 Flask 应用和初始化函数
-from app import app, init_db
+# ====================== 可配置参数 ======================
 
+# 服务器配置
+HOST = '127.0.0.1'             # 监听地址，'0.0.0.0' 表示允许外部访问
+PORT = 5000                    # 监听端口
+DEBUG = False                  # 调试模式（可通过环境变量 FLASK_DEBUG=1 开启）
+OPEN_BROWSER = True            # 启动时是否自动打开浏览器
+
+# 数据库配置
+DB_NAME = 'ai_api_hub.db'      # SQLite 数据库文件名
+
+# 文件上传配置
+MAX_UPLOAD_SIZE = 16 * 1024 * 1024   # 上传文件最大 16MB
+ALLOWED_EXTENSIONS = {                 # AI 解析支持的文件格式
+    '.docx', '.pdf', '.xlsx',
+    '.jpg', '.jpeg', '.png', '.gif', '.webp'
+}
+IMAGE_EXTENSIONS = {                   # 图片格式（走多模态 API）
+    '.jpg', '.jpeg', '.png', '.gif', '.webp'
+}
+
+# AI 服务配置
+AI_REQUEST_TIMEOUT = 60        # AI API 请求超时（秒）
+AI_MAX_TOKENS = 4000           # AI 最大输出 token 数
+URL_FETCH_TIMEOUT = 15         # 网页抓取超时（秒）
+URL_MAX_LENGTH = 100000        # 网页内容最大字符数
+
+# ====================== 启动逻辑 ======================
 
 def open_browser():
     """延迟 1.5 秒后打开浏览器，等待服务器启动完成"""
-    time.sleep(1.5)                                          # 等待 Flask 服务器启动
-    webbrowser.open('http://localhost:5000')                  # 在默认浏览器中打开应用
+    time.sleep(1.5)
+    webbrowser.open(f'http://{HOST}:{PORT}')
 
 
 if __name__ == '__main__':
-    init_db()                                                # 初始化数据库表结构（如已存在则跳过）
+    # 组装配置字典，传入 Flask app
+    config = {
+        'DB_NAME': DB_NAME,
+        'MAX_CONTENT_LENGTH': MAX_UPLOAD_SIZE,
+        'ALLOWED_EXTENSIONS': ALLOWED_EXTENSIONS,
+        'IMAGE_EXTENSIONS': IMAGE_EXTENSIONS,
+        'AI_REQUEST_TIMEOUT': AI_REQUEST_TIMEOUT,
+        'AI_MAX_TOKENS': AI_MAX_TOKENS,
+        'URL_FETCH_TIMEOUT': URL_FETCH_TIMEOUT,
+        'URL_MAX_LENGTH': URL_MAX_LENGTH,
+    }
 
-    # 打印启动信息横幅
-    print("=" * 50)                                          # 分隔线
-    print("  AI API 大模型集合平台")                           # 应用名称
-    print("  访问地址: http://localhost:5000")                 # 访问地址
-    print("=" * 50)                                          # 分隔线
+    # 创建 Flask 应用并初始化数据库
+    from app import create_app
+    from app.database import init_db
 
-    # 在后台线程中打开浏览器（daemon=True 表示主线程退出时自动结束）
-    threading.Thread(target=open_browser, daemon=True).start()
+    app = create_app(config)
+    with app.app_context():
+        init_db()
+
+    # 打印启动信息
+    print("=" * 50)
+    print("  AI API 大模型集合平台")
+    print(f"  访问地址: http://{HOST}:{PORT}")
+    print("=" * 50)
+
+    # 自动打开浏览器
+    if OPEN_BROWSER:
+        threading.Thread(target=open_browser, daemon=True).start()
 
     # 启动 Flask 服务器
-    # host='127.0.0.1' 仅本机可访问（安全）
-    # port=5000 监听端口
-    # debug=False 生产模式（通过环境变量 FLASK_DEBUG=1 可开启调试）
-    app.run(
-        debug=os.environ.get('FLASK_DEBUG', '0') == '1',     # 通过环境变量控制调试模式
-        host='127.0.0.1',                                    # 仅绑定本机地址
-        port=5000                                            # 监听端口
-    )
+    debug = DEBUG or os.environ.get('FLASK_DEBUG', '0') == '1'
+    app.run(debug=debug, host=HOST, port=PORT)

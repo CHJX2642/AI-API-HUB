@@ -46,7 +46,9 @@
       "Bash(tasklist //FI \"PID eq 42912\")",
       "Bash(tasklist //FI \"PID eq 9196\")",
       "Bash(taskkill //F //PID 24468)",
-      "Bash(taskkill //F //PID 42912)"
+      "Bash(taskkill //F //PID 42912)",
+      "Bash(sqlite3 *)",
+      "Bash(D:/Users/21023/AppData/Local/Programs/Python/Python313/python.exe *)"
     ]
   }
 }

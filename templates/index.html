@@ -88,22 +88,55 @@
                 <div class="providers-list" id="providers-list"></div>
             </div>
 
-            <!-- 模型列表页面：全局模型表格 -->
+            <!-- 模型列表页面：筛选 + 按提供商折叠表格 -->
             <div id="models-page" class="page">
-                <h2>模型列表</h2>
+                <div class="page-header">
+                    <h2>模型列表</h2>
+                    <div class="models-toolbar">
+                        <input type="text" id="models-search" class="models-search-input" placeholder="搜索模型..." oninput="filterModels()">
+                        <label class="models-collapse-label">
+                            <input type="checkbox" id="models-collapse-toggle" onchange="filterModels()"> 按提供商折叠
+                        </label>
+                    </div>
+                </div>
                 <div class="models-table-container">
-                    <table class="models-table">
+                    <table class="models-table" id="models-table">
                         <thead>
                             <tr>
                                 <th>提供商</th>
                                 <th>模型ID</th>
                                 <th>显示名称</th>
-                                <th>最大Token</th>
+                                <th class="sortable" onclick="sortModelsBy('max_tokens')">最大Token</th>
                                 <th>多模态</th>
                                 <th>函数调用</th>
-                                <th>输入价格</th>
-                                <th>输出价格</th>
+                                <th class="sortable" onclick="sortModelsBy('price_input')">输入价格</th>
+                                <th class="sortable" onclick="sortModelsBy('price_input_cached')">缓存价格</th>
+                                <th class="sortable" onclick="sortModelsBy('price_output')">输出价格</th>
                                 <th>操作</th>
+                            </tr>
+                            <tr class="filter-row">
+                                <th><input type="text" data-col="provider_name" placeholder="筛选..." oninput="filterModels()"></th>
+                                <th><input type="text" data-col="model_id" placeholder="筛选..." oninput="filterModels()"></th>
+                                <th><input type="text" data-col="display_name" placeholder="筛选..." oninput="filterModels()"></th>
+                                <th></th>
+                                <th>
+                                    <select data-col="supports_vision" onchange="filterModels()">
+                                        <option value="">全部</option>
+                                        <option value="1">是</option>
+                                        <option value="0">否</option>
+                                    </select>
+                                </th>
+                                <th>
+                                    <select data-col="supports_function_calling" onchange="filterModels()">
+                                        <option value="">全部</option>
+                                        <option value="1">是</option>
+                                        <option value="0">否</option>
+                                    </select>
+                                </th>
+                                <th></th>
+                                <th></th>
+                                <th></th>
+                                <th></th>
                             </tr>
                         </thead>
                         <tbody id="models-table-body"></tbody>
@@ -156,7 +189,34 @@
                     <!-- 输入区域 -->
                     <div class="ai-input-section">
                         <h3>输入文档内容</h3>
-                        <textarea id="ai-input" class="ai-textarea" placeholder="粘贴 API 文档、模型介绍、定价信息等内容...&#10;&#10;例如：&#10;OpenAI 提供 GPT-4o 模型，支持 128K 上下文，支持视觉和函数调用。&#10;输入价格 $0.005/1K tokens，输出价格 $0.015/1K tokens。&#10;API 地址：https://api.openai.com/v1"></textarea>
+                        <!-- Tab 切换 -->
+                        <div class="ai-input-tabs">
+                            <button class="ai-tab active" data-mode="text" onclick="switchInputMode('text')">文本输入</button>
+                            <button class="ai-tab" data-mode="file" onclick="switchInputMode('file')">文件上传</button>
+                            <button class="ai-tab" data-mode="url" onclick="switchInputMode('url')">URL 抓取</button>
+                        </div>
+                        <!-- 文本输入 -->
+                        <div id="input-mode-text" class="ai-input-mode active">
+                            <textarea id="ai-input" class="ai-textarea" placeholder="粘贴 API 文档、模型介绍、定价信息等内容...&#10;&#10;例如：&#10;OpenAI 提供 GPT-4o 模型，支持 128K 上下文，支持视觉和函数调用。&#10;输入价格 ¥5/1M tokens，输出价格 ¥15/1M tokens。&#10;API 地址：https://api.openai.com/v1"></textarea>
+                        </div>
+                        <!-- 文件上传 -->
+                        <div id="input-mode-file" class="ai-input-mode" style="display:none;">
+                            <div class="ai-file-drop" id="ai-file-drop">
+                                <p>&#x1F4C1; 拖拽文件到此处，或点击选择文件</p>
+                                <p class="ai-file-hint">支持: .docx, .pdf, .xlsx, .jpg, .png, .gif, .webp</p>
+                                <input type="file" id="ai-file-input" accept=".docx,.pdf,.xlsx,.jpg,.jpeg,.png,.gif,.webp" style="display:none;">
+                            </div>
+                            <div id="ai-file-info" class="ai-file-info" style="display:none;">
+                                <span id="ai-file-name"></span>
+                                <button class="btn-small danger" onclick="clearFileInput()">移除</button>
+                            </div>
+                        </div>
+                        <!-- URL 抓取 -->
+                        <div id="input-mode-url" class="ai-input-mode" style="display:none;">
+                            <input type="url" id="ai-url-input" class="ai-url-input" placeholder="输入网页 URL，例如 https://platform.openai.com/docs/models">
+                            <small class="ai-file-hint">将自动抓取网页内容并提取文字信息</small>
+                        </div>
+                        <!-- 操作按钮 -->
                         <div class="ai-actions">
                             <button class="btn-primary" id="btn-ai-parse" onclick="parseDocument()">&#x1F9E0; AI 解析</button>
                             <button class="btn-secondary" onclick="clearAiInput()">清空</button>
@@ -169,6 +229,9 @@
                             <p class="ai-placeholder">解析结果将显示在这里...</p>
                         </div>
                         <div id="ai-import-actions" class="ai-import-actions" style="display:none;">
+                            <label class="import-mode-label">
+                                <input type="checkbox" id="ai-overwrite-mode"> 替换已有数据（取消勾选则仅补充缺失字段）
+                            </label>
                             <button class="btn-primary" onclick="importParsedData()">&#x1F4E5; 确认导入</button>
                             <span id="ai-import-summary"></span>
                         </div>
@@ -179,21 +242,29 @@
             <!-- AI 设置页面：配置 AI 服务 -->
             <div id="settings-page" class="page">
                 <h2>AI 设置</h2>
-                <p class="page-desc">配置用于文档解析的 AI 服务（兼容 OpenAI 格式的 API）</p>
+                <p class="page-desc">配置用于文档解析的 AI 服务</p>
                 <div class="settings-form">
                     <div class="form-group">
-                        <label>AI Base URL</label>
-                        <input type="text" id="setting-ai-base-url" placeholder="例: https://api.openai.com/v1">
-                        <small>OpenAI 格式的 API 地址，不要带 /chat/completions 后缀</small>
+                        <label>API 格式</label>
+                        <select id="setting-ai-format">
+                            <option value="openai">OpenAI 格式</option>
+                            <option value="anthropic">Anthropic 格式</option>
+                        </select>
+                        <small>选择 API 服务商的接口格式</small>
                     </div>
                     <div class="form-group">
-                        <label>AI API Key</label>
+                        <label>API URL</label>
+                        <input type="text" id="setting-ai-url" placeholder="例: https://api.openai.com/v1/chat/completions">
+                        <small>完整的 API 端点地址，填什么就请求什么</small>
+                    </div>
+                    <div class="form-group">
+                        <label>API Key</label>
                         <input type="password" id="setting-ai-api-key" placeholder="输入 API Key">
                         <small>用于调用 AI 服务的密钥</small>
                     </div>
                     <div class="form-group">
-                        <label>AI 模型名</label>
-                        <input type="text" id="setting-ai-model" placeholder="例: gpt-4o、deepseek-chat、qwen-plus">
+                        <label>模型名</label>
+                        <input type="text" id="setting-ai-model" placeholder="例: gpt-4o、deepseek-chat、claude-sonnet-4-20250514">
                         <small>要使用的模型名称</small>
                     </div>
                     <div class="form-actions">

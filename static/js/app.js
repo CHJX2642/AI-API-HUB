@@ -7,6 +7,8 @@
 let currentPage = 'dashboard';    // 当前显示的页面名称
 let currentProviderId = null;     // 当前查看的提供商 ID（用于详情页）
 let allProviders = [];            // 缓存所有提供商数据（用于筛选）
+let allModelsCache = [];          // 缓存所有模型数据（用于筛选和折叠）
+let modelsSort = { col: '', dir: 'asc' };  // 模型列表排序状态
 
 // ====================== 初始化 ======================
 
@@ -52,6 +54,9 @@ function setupEventListeners() {
     document.getElementById('modal-overlay').addEventListener('click', (e) => {
         if (e.target === e.currentTarget) closeModal();  // 点击遮罩层关闭
     });
+
+    // 初始化文件拖拽区
+    setupFileDropZone();
 }
 
 // ====================== 页面切换 ======================
@@ -220,16 +225,21 @@ function renderProvidersGrid(providers) {
         return;
     }
     // 使用模板字符串生成卡片 HTML，所有用户输入均通过 escapeHtml 转义
-    grid.innerHTML = providers.map(p => `
+    grid.innerHTML = providers.map(p => {
+        const apiUrls = p.api_urls || [];                      // 获取 URL 列表
+        const urlText = apiUrls.length > 0                     // 如果有 URL
+            ? apiUrls.map(u => u.label || 'API').join('、') + ' · ' + apiUrls[0].url  // 显示标签和第一个 URL
+            : '未设置URL';                                     // 无 URL 时的默认文本
+        return `
         <div class="provider-card" onclick="showProviderDetail(${p.id})">
             <div class="provider-card-header">
                 <div class="provider-name">${escapeHtml(p.display_name)}</div>
                 <div class="provider-category">${escapeHtml(getCategoryName(p.category))}</div>
             </div>
-            <div class="provider-url">${escapeHtml(p.base_url) || '未设置URL'}</div>
+            <div class="provider-url" title="${escapeHtml(urlText)}">${escapeHtml(urlText)}</div>
             <div class="provider-desc">${escapeHtml(p.description) || '暂无描述'}</div>
         </div>
-    `).join('');
+    `;}).join('');
 }
 
 function filterProviders(category) {
@@ -263,11 +273,16 @@ function renderProvidersList(providers) {
         return;
     }
     // 生成列表项 HTML，所有用户输入均通过 escapeHtml 转义
-    list.innerHTML = providers.map(p => `
+    list.innerHTML = providers.map(p => {
+        const apiUrls = p.api_urls || [];                      // 获取 URL 列表
+        const urlSummary = apiUrls.length > 0                  // 如果有 URL
+            ? apiUrls.map(u => u.label || 'API').join('、')    // 显示所有标签
+            : '未设置URL';                                     // 无 URL 时的默认文本
+        return `
         <div class="provider-list-item">
             <div class="provider-list-info">
                 <h3>${escapeHtml(p.display_name)}</h3>
-                <p>${escapeHtml(p.base_url) || '未设置URL'} &middot; ${escapeHtml(getCategoryName(p.category))}</p>
+                <p>${escapeHtml(urlSummary)} &middot; ${escapeHtml(getCategoryName(p.category))}</p>
             </div>
             <div class="provider-list-actions">
                 <button class="btn-small" onclick="showProviderDetail(${p.id})">查看</button>
@@ -275,7 +290,7 @@ function renderProvidersList(providers) {
                 <button class="btn-small danger" onclick="deleteProvider(${p.id})">删除</button>
             </div>
         </div>
-    `).join('');
+    `;}).join('');
 }
 
 async function searchProviders() {
@@ -301,6 +316,18 @@ async function showProviderDetail(providerId) {
         document.getElementById('detail-provider-name').textContent = provider.display_name;
 
         // 渲染基本信息
+        const apiUrls = provider.api_urls || [];               // 获取 URL 列表
+        const urlsHtml = apiUrls.length > 0                    // 如果有 URL
+            ? apiUrls.map(u => `
+                <div class="url-display-item">
+                    <span class="url-display-label">${escapeHtml(u.label || 'API')}</span>
+                    <span class="badge ${u.format === 'anthropic' ? 'warning' : 'success'}">${escapeHtml(u.format || 'openai')}</span>
+                    <span class="url-display-link">${escapeHtml(u.url)}</span>
+                    <button class="btn-copy" onclick="copyToClipboard('${escapeHtml(u.url)}', this)">复制</button>
+                </div>
+            `).join('')
+            : '<span style="color: var(--text-secondary);">未设置</span>';  // 无 URL 时显示提示
+
         document.getElementById('detail-info').innerHTML = `
             <div class="info-item">
                 <div class="info-label">名称</div>
@@ -314,14 +341,11 @@ async function showProviderDetail(providerId) {
                 <div class="info-label">类别</div>
                 <div class="info-value">${escapeHtml(getCategoryName(provider.category))}</div>
             </div>
-            <div class="info-item">
-                <div class="info-label">Base URL</div>
-                <div class="info-value copy-row">
-                    <span>${escapeHtml(provider.base_url) || '未设置'}</span>
-                    ${provider.base_url ? `<button class="btn-copy" onclick="copyToClipboard('${escapeHtml(provider.base_url)}', this)">复制</button>` : ''}
-                </div>
+            <div class="info-item info-item-wide">
+                <div class="info-label">API URLs</div>
+                <div class="info-value url-display-list">${urlsHtml}</div>
             </div>
-            <div class="info-item">
+            <div class="info-item info-item-wide">
                 <div class="info-label">描述</div>
                 <div class="info-value">${escapeHtml(provider.description) || '暂无描述'}</div>
             </div>
@@ -354,6 +378,7 @@ function renderModels(models) {
                     <th>多模态</th>
                     <th>函数调用</th>
                     <th>输入价格</th>
+                    <th>缓存价格</th>
                     <th>输出价格</th>
                     <th>操作</th>
                 </tr>
@@ -366,8 +391,9 @@ function renderModels(models) {
                         <td>${m.max_tokens ? m.max_tokens.toLocaleString() : '-'}</td>
                         <td>${m.supports_vision ? '<span class="badge success">是</span>' : '<span class="badge warning">否</span>'}</td>
                         <td>${m.supports_function_calling ? '<span class="badge success">是</span>' : '<span class="badge warning">否</span>'}</td>
-                        <td>${m.price_input ? `$${m.price_input}/1K` : '-'}</td>
-                        <td>${m.price_output ? `$${m.price_output}/1K` : '-'}</td>
+                        <td>${m.price_input ? `¥${m.price_input}/1M` : '-'}</td>
+                        <td>${m.price_input_cached ? `¥${m.price_input_cached}/1M` : '-'}</td>
+                        <td>${m.price_output ? `¥${m.price_output}/1M` : '-'}</td>
                         <td>
                             <button class="btn-small" onclick="showEditModelModal(${m.id})">编辑</button>
                             <button class="btn-small danger" onclick="deleteModel(${m.id})">删除</button>
@@ -410,34 +436,134 @@ function renderKeys(keys) {
 
 async function loadAllModels() {
     try {
-        const response = await apiRequest('/api/models');       // 使用批量 API 一次获取所有模型
-        const models = await response.json();                   // 解析 JSON
-        const tbody = document.getElementById('models-table-body');  // 获取表格 body
+        const response = await apiRequest('/api/models');      // 请求所有模型列表
+        allModelsCache = await response.json();                // 缓存到全局变量
+        filterModels();                                        // 执行筛选和渲染
+    } catch (error) {}                                         // 错误已由 apiRequest 处理
+}
 
-        if (models.length === 0) {                              // 如果没有模型
-            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color: var(--text-secondary);">暂无模型</td></tr>';
-            return;
+function sortModelsBy(col) {
+    if (modelsSort.col === col) {                           // 如果点击的是当前排序列
+        modelsSort.dir = modelsSort.dir === 'asc' ? 'desc' : 'asc';  // 切换排序方向
+    } else {
+        modelsSort.col = col;                               // 设置新的排序列
+        modelsSort.dir = 'asc';                             // 默认升序
+    }
+    filterModels();                                         // 重新筛选并渲染
+}
+
+function filterModels() {
+    const tbody = document.getElementById('models-table-body');  // 获取表格主体
+    if (!tbody) return;                                          // 元素不存在则退出
+
+    const searchVal = (document.getElementById('models-search')?.value || '').toLowerCase();  // 获取全局搜索关键词
+    const collapse = document.getElementById('models-collapse-toggle')?.checked || false;     // 获取折叠开关状态
+
+    // 收集列筛选条件（文本输入框）
+    const filters = {};
+    document.querySelectorAll('.filter-row input[data-col]').forEach(input => {
+        const val = input.value.trim().toLowerCase();          // 获取筛选值并转小写
+        if (val) filters[input.dataset.col] = val;            // 非空则加入筛选条件
+    });
+    // 收集列筛选条件下拉框
+    document.querySelectorAll('.filter-row select[data-col]').forEach(sel => {
+        if (sel.value !== '') filters[sel.dataset.col] = sel.value;  // 非空则加入筛选条件
+    });
+
+    // 筛选模型：先全局搜索，再逐列筛选
+    let filtered = allModelsCache.filter(m => {
+        if (searchVal) {                                       // 如果有全局搜索关键词
+            const haystack = `${m.provider_name} ${m.model_id} ${m.display_name}`.toLowerCase();  // 拼接搜索范围
+            if (!haystack.includes(searchVal)) return false;   // 不匹配则排除
         }
+        for (const [col, val] of Object.entries(filters)) {   // 遍历列筛选条件
+            if (col === 'supports_vision' || col === 'supports_function_calling') {
+                if (String(m[col] ? 1 : 0) !== val) return false;  // 布尔列精确匹配
+            } else {
+                if (!String(m[col] || '').toLowerCase().includes(val)) return false;  // 文本列模糊匹配
+            }
+        }
+        return true;                                           // 通过所有筛选条件
+    });
 
-        // 生成模型表格行 HTML
-        tbody.innerHTML = models.map(m => `
-            <tr>
-                <td>${escapeHtml(m.provider_name)}</td>
-                <td><code>${escapeHtml(m.model_id)}</code></td>
-                <td>${escapeHtml(m.display_name)}</td>
-                <td>${m.max_tokens ? m.max_tokens.toLocaleString() : '-'}</td>
-                <td>${m.supports_vision ? '<span class="badge success">是</span>' : '<span class="badge warning">否</span>'}</td>
-                <td>${m.supports_function_calling ? '<span class="badge success">是</span>' : '<span class="badge warning">否</span>'}</td>
-                <td>${m.price_input ? `$${m.price_input}/1K` : '-'}</td>
-                <td>${m.price_output ? `$${m.price_output}/1K` : '-'}</td>
-                <td>
-                    <button class="btn-small" onclick="goToModelEdit(${m.provider_id}, ${m.id})">编辑</button>
-                    <button class="btn-small danger" onclick="deleteModelFromList(${m.id})">删除</button>
-                </td>
-            </tr>
-        `).join('');
-    } catch (error) {
-        // 错误已由 apiRequest 统一处理
+    // 排序
+    if (modelsSort.col) {                                      // 如果有排序列
+        const dir = modelsSort.dir === 'asc' ? 1 : -1;        // 排序方向：升序=1，降序=-1
+        filtered.sort((a, b) => {
+            const va = a[modelsSort.col] ?? 0;                 // 获取值，null 默认 0
+            const vb = b[modelsSort.col] ?? 0;
+            return (va - vb) * dir;                            // 数值比较并乘以方向
+        });
+    }
+
+    if (filtered.length === 0) {                               // 如果没有匹配结果
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; color: var(--text-secondary);">暂无匹配模型</td></tr>';
+        return;
+    }
+
+    // 按提供商分组
+    const groups = {};
+    filtered.forEach(m => {
+        const key = m.provider_name || '未知提供商';           // 分组键
+        if (!groups[key]) groups[key] = [];                    // 初始化分组数组
+        groups[key].push(m);                                   // 添加到对应分组
+    });
+
+    let html = '';                                             // 构建表格 HTML
+    for (const [provider, models] of Object.entries(groups)) { // 遍历每个分组
+        if (collapse) {                                        // 如果折叠模式开启
+            html += `
+                <tr class="provider-group-header" onclick="toggleProviderGroup(this)">
+                    <td colspan="10">
+                        <span class="group-toggle">&#x25B6;</span>
+                        <strong>${escapeHtml(provider)}</strong>
+                        <span class="group-count">(${models.length} 个模型)</span>
+                    </td>
+                </tr>
+            `;
+        }
+        models.forEach(m => {                                  // 遍历分组内的模型
+            html += `
+                <tr class="${collapse ? 'provider-group-row collapsed' : ''}">
+                    <td>${escapeHtml(m.provider_name)}</td>
+                    <td><code>${escapeHtml(m.model_id)}</code></td>
+                    <td>${escapeHtml(m.display_name)}</td>
+                    <td>${m.max_tokens ? m.max_tokens.toLocaleString() : '-'}</td>
+                    <td>${m.supports_vision ? '<span class="badge success">是</span>' : '<span class="badge warning">否</span>'}</td>
+                    <td>${m.supports_function_calling ? '<span class="badge success">是</span>' : '<span class="badge warning">否</span>'}</td>
+                    <td>${m.price_input ? `¥${m.price_input}/1M` : '-'}</td>
+                    <td>${m.price_input_cached ? `¥${m.price_input_cached}/1M` : '-'}</td>
+                    <td>${m.price_output ? `¥${m.price_output}/1M` : '-'}</td>
+                    <td>
+                        <button class="btn-small" onclick="goToModelEdit(${m.provider_id}, ${m.id})">编辑</button>
+                        <button class="btn-small danger" onclick="deleteModelFromList(${m.id})">删除</button>
+                    </td>
+                </tr>
+            `;
+        });
+    }
+    tbody.innerHTML = html;                                    // 写入表格 DOM
+
+    // 更新排序指示器（▲/▼ 箭头）
+    const sortCols = { max_tokens: 3, price_input: 6, price_input_cached: 7, price_output: 8 };  // 可排序列索引映射
+    document.querySelectorAll('#models-table thead tr:first-child th').forEach((th, i) => {
+        th.classList.remove('sort-asc', 'sort-desc');          // 清除所有排序样式
+        for (const [col, idx] of Object.entries(sortCols)) {   // 遍历可排序列
+            if (i === idx && modelsSort.col === col) {         // 匹配当前排序列
+                th.classList.add(modelsSort.dir === 'asc' ? 'sort-asc' : 'sort-desc');  // 添加排序方向样式
+            }
+        }
+    });
+}
+
+function toggleProviderGroup(headerRow) {
+    const icon = headerRow.querySelector('.group-toggle');      // 获取折叠图标元素
+    const expanding = icon.textContent === '▶';                // 当前是折叠状态则展开
+    icon.textContent = expanding ? '▼' : '▶';                 // 切换图标方向
+    let row = headerRow.nextElementSibling;                     // 获取下一行
+    while (row && row.classList.contains('provider-group-row')) {  // 遍历同组行
+        row.style.display = expanding ? '' : 'none';           // 展开显示，折叠隐藏
+        row = row.nextElementSibling;                           // 移动到下一行
     }
 }
 
@@ -517,6 +643,64 @@ async function deleteKeyFromList(keyId) {
 
 // ====================== 提供商 CRUD 模态框 ======================
 
+// ====================== URL 动态列表 ======================
+
+let urlEntryIndex = 0;                                         // URL 条目计数器（用于生成唯一索引）
+
+function createUrlEntryHtml(entry = {}) {
+    const idx = urlEntryIndex++;                               // 递增索引
+    return `
+        <div class="url-entry" data-index="${idx}">
+            <input type="text" class="url-entry-label" value="${escapeHtml(entry.label || '')}" placeholder="名称，如：按量计费">
+            <input type="text" class="url-entry-url" value="${escapeHtml(entry.url || '')}" placeholder="完整 API 地址">
+            <select class="url-entry-format">
+                <option value="openai" ${entry.format === 'openai' ? 'selected' : ''}>OpenAI</option>
+                <option value="anthropic" ${entry.format === 'anthropic' ? 'selected' : ''}>Anthropic</option>
+            </select>
+            <button type="button" class="btn-small danger" onclick="removeUrlEntry(this)">删除</button>
+        </div>
+    `;
+}
+
+function addUrlEntry(containerId, entry = {}) {
+    const container = document.getElementById(containerId);     // 获取容器元素
+    container.insertAdjacentHTML('beforeend', createUrlEntryHtml(entry));  // 追加新条目 HTML
+}
+
+function removeUrlEntry(btn) {
+    btn.closest('.url-entry').remove();                         // 找到最近的 url-entry 父元素并移除
+}
+
+function collectApiUrls(formEl) {
+    const entries = formEl.querySelectorAll('.url-entry');      // 获取所有 URL 条目
+    const urls = [];                                            // 结果数组
+    entries.forEach(entry => {
+        const url = entry.querySelector('.url-entry-url').value.trim();  // 获取 URL 值
+        if (url) {                                              // URL 非空才收集
+            urls.push({
+                label: entry.querySelector('.url-entry-label').value.trim() || 'API',  // 标签，默认 'API'
+                url: url,                                       // URL 地址
+                format: entry.querySelector('.url-entry-format').value  // 接口格式
+            });
+        }
+    });
+    return urls;                                                // 返回 URL 数组
+}
+
+function renderApiUrlsForm(containerId, apiUrls) {
+    urlEntryIndex = 0;                                          // 重置索引计数器
+    const container = document.getElementById(containerId);     // 获取容器元素
+    container.innerHTML = '';                                   // 清空容器
+    const urls = Array.isArray(apiUrls) ? apiUrls : [];        // 确保是数组
+    if (urls.length === 0) {
+        addUrlEntry(containerId);                               // 至少显示一行空条目
+    } else {
+        urls.forEach(u => addUrlEntry(containerId, u));        // 为每个已有 URL 创建条目
+    }
+}
+
+// ====================== 提供商 CRUD 模态框 ======================
+
 function showAddProviderModal() {
     document.getElementById('modal-title').textContent = '添加API提供商';
     document.getElementById('modal-body').innerHTML = `
@@ -530,8 +714,10 @@ function showAddProviderModal() {
                 <input type="text" name="display_name" required placeholder="例: OpenAI">
             </div>
             <div class="form-group">
-                <label>Base URL</label>
-                <input type="text" name="base_url" placeholder="例: https://api.openai.com/v1">
+                <label>API URLs</label>
+                <div id="url-entries" class="url-entries"></div>
+                <button type="button" class="btn-small" onclick="addUrlEntry('url-entries')">+ 添加URL</button>
+                <small>可添加多个地址（如不同计费方式），选择接口格式</small>
             </div>
             <div class="form-group">
                 <label>描述</label>
@@ -551,23 +737,25 @@ function showAddProviderModal() {
             </div>
         </form>
     `;
-    // 绑定表单提交事件
+    renderApiUrlsForm('url-entries', []);                      // 初始化空的 URL 列表
     document.getElementById('provider-form').addEventListener('submit', async (e) => {
-        e.preventDefault();                                     // 阻止默认提交
+        e.preventDefault();                                     // 阻止表单默认提交
         const formData = new FormData(e.target);                // 获取表单数据
         const data = Object.fromEntries(formData);              // 转换为对象
+        data.api_urls = collectApiUrls(e.target);              // 收集 URL 列表数据
+        delete data.url_label;                                  // 清理临时字段
+        delete data.url_value;
+        delete data.url_format;
         try {
             await apiRequest('/api/providers', {
-                method: 'POST',
-                body: JSON.stringify(data)
+                method: 'POST',                                // POST 创建新提供商
+                body: JSON.stringify(data)                     // 序列化为 JSON
             });
             closeModal();                                       // 关闭模态框
-            showToast('提供商已创建');                            // 显示成功提示
+            showToast('提供商已创建');                          // 显示成功提示
             loadProviders();                                    // 刷新提供商列表
             loadStats();                                        // 刷新统计数据
-        } catch (error) {
-            // 错误已由 apiRequest 统一处理
-        }
+        } catch (error) {}                                     // 错误已由 apiRequest 处理
     });
     openModal();                                                // 打开模态框
 }
@@ -575,7 +763,7 @@ function showAddProviderModal() {
 async function showEditProviderModal(providerId) {
     try {
         const response = await apiRequest(`/api/providers/${providerId}`);
-        const provider = await response.json();                 // 获取提供商当前数据
+        const provider = await response.json();
         document.getElementById('modal-title').textContent = '编辑API提供商';
         document.getElementById('modal-body').innerHTML = `
             <form id="provider-form">
@@ -588,8 +776,10 @@ async function showEditProviderModal(providerId) {
                     <input type="text" name="display_name" required value="${escapeHtml(provider.display_name)}">
                 </div>
                 <div class="form-group">
-                    <label>Base URL</label>
-                    <input type="text" name="base_url" value="${escapeHtml(provider.base_url) || ''}">
+                    <label>API URLs</label>
+                    <div id="url-entries" class="url-entries"></div>
+                    <button type="button" class="btn-small" onclick="addUrlEntry('url-entries')">+ 添加URL</button>
+                    <small>可添加多个地址（如不同计费方式），选择接口格式</small>
                 </div>
                 <div class="form-group">
                     <label>描述</label>
@@ -609,30 +799,27 @@ async function showEditProviderModal(providerId) {
                 </div>
             </form>
         `;
-        // 绑定表单提交事件
+        renderApiUrlsForm('url-entries', provider.api_urls);   // 填充已有的 URL 数据
         document.getElementById('provider-form').addEventListener('submit', async (e) => {
-            e.preventDefault();                                 // 阻止默认提交
+            e.preventDefault();                                 // 阻止表单默认提交
             const formData = new FormData(e.target);            // 获取表单数据
             const data = Object.fromEntries(formData);          // 转换为对象
+            data.api_urls = collectApiUrls(e.target);          // 收集 URL 列表数据
             try {
                 await apiRequest(`/api/providers/${providerId}`, {
-                    method: 'PUT',
-                    body: JSON.stringify(data)
+                    method: 'PUT',                             // PUT 更新提供商
+                    body: JSON.stringify(data)                 // 序列化为 JSON
                 });
                 closeModal();                                   // 关闭模态框
-                showToast('提供商已更新');                        // 显示成功提示
+                showToast('提供商已更新');                      // 显示成功提示
                 loadProviders();                                // 刷新提供商列表
-                if (currentPage === 'provider-detail') {
+                if (currentPage === 'provider-detail') {       // 如果在详情页
                     showProviderDetail(providerId);             // 刷新详情页
                 }
-            } catch (error) {
-                // 错误已由 apiRequest 统一处理
-            }
+            } catch (error) {}                                 // 错误已由 apiRequest 处理
         });
         openModal();                                            // 打开模态框
-    } catch (error) {
-        // 错误已由 apiRequest 统一处理
-    }
+    } catch (error) {}                                         // 错误已由 apiRequest 处理
 }
 
 async function deleteProvider(providerId) {
@@ -695,12 +882,16 @@ function showAddModelModal() {
                 </select>
             </div>
             <div class="form-group">
-                <label>输入价格 ($/1K tokens)</label>
-                <input type="number" name="price_input" step="0.0001" placeholder="例: 0.005">
+                <label>输入价格 (¥/1M tokens)</label>
+                <input type="number" name="price_input" step="0.01" placeholder="例: 5">
             </div>
             <div class="form-group">
-                <label>输出价格 ($/1K tokens)</label>
-                <input type="number" name="price_output" step="0.0001" placeholder="例: 0.015">
+                <label>缓存命中价格 (¥/1M tokens)</label>
+                <input type="number" name="price_input_cached" step="0.01" placeholder="例: 1">
+            </div>
+            <div class="form-group">
+                <label>输出价格 (¥/1M tokens)</label>
+                <input type="number" name="price_output" step="0.01" placeholder="例: 15">
             </div>
             <div class="form-actions">
                 <button type="button" class="btn-secondary" onclick="closeModal()">取消</button>
@@ -716,6 +907,7 @@ function showAddModelModal() {
         // 类型转换：字符串转数字
         data.max_tokens = data.max_tokens ? parseInt(data.max_tokens) : null;
         data.price_input = data.price_input ? parseFloat(data.price_input) : null;
+        data.price_input_cached = data.price_input_cached ? parseFloat(data.price_input_cached) : null;
         data.price_output = data.price_output ? parseFloat(data.price_output) : null;
         try {
             await apiRequest(`/api/providers/${currentProviderId}/models`, {
@@ -780,12 +972,16 @@ async function showEditModelModal(modelId) {
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>输入价格 ($/1K tokens)</label>
-                    <input type="number" name="price_input" step="0.0001" value="${model.price_input || ''}">
+                    <label>输入价格 (¥/1M tokens)</label>
+                    <input type="number" name="price_input" step="0.01" value="${model.price_input || ''}">
                 </div>
                 <div class="form-group">
-                    <label>输出价格 ($/1K tokens)</label>
-                    <input type="number" name="price_output" step="0.0001" value="${model.price_output || ''}">
+                    <label>缓存命中价格 (¥/1M tokens)</label>
+                    <input type="number" name="price_input_cached" step="0.01" value="${model.price_input_cached || ''}">
+                </div>
+                <div class="form-group">
+                    <label>输出价格 (¥/1M tokens)</label>
+                    <input type="number" name="price_output" step="0.01" value="${model.price_output || ''}">
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn-secondary" onclick="closeModal()">取消</button>
@@ -801,6 +997,7 @@ async function showEditModelModal(modelId) {
             // 类型转换
             data.max_tokens = data.max_tokens ? parseInt(data.max_tokens) : null;
             data.price_input = data.price_input ? parseFloat(data.price_input) : null;
+            data.price_input_cached = data.price_input_cached ? parseFloat(data.price_input_cached) : null;
             data.price_output = data.price_output ? parseFloat(data.price_output) : null;
             try {
                 await apiRequest(`/api/models/${modelId}`, {
@@ -987,9 +1184,10 @@ async function loadAISettings() {
     try {
         const response = await apiRequest('/api/settings');     // 获取所有设置
         const settings = await response.json();                 // 解析 JSON
-        document.getElementById('setting-ai-base-url').value = settings.ai_base_url || '';
-        document.getElementById('setting-ai-api-key').value = settings.ai_api_key || '';
-        document.getElementById('setting-ai-model').value = settings.ai_model || '';
+        document.getElementById('setting-ai-format').value = settings.ai_format || 'openai';  // 设置接口格式
+        document.getElementById('setting-ai-url').value = settings.ai_url || settings.ai_base_url || '';  // 设置 API URL
+        document.getElementById('setting-ai-api-key').value = settings.ai_api_key || '';  // 设置 API Key
+        document.getElementById('setting-ai-model').value = settings.ai_model || '';  // 设置模型名称
     } catch (error) {
         // 错误已由 apiRequest 统一处理
     }
@@ -1000,20 +1198,21 @@ async function loadAISettings() {
  */
 async function saveAISettings() {
     const data = {
-        ai_base_url: document.getElementById('setting-ai-base-url').value.trim(),
-        ai_api_key: document.getElementById('setting-ai-api-key').value.trim(),
-        ai_model: document.getElementById('setting-ai-model').value.trim()
+        ai_format: document.getElementById('setting-ai-format').value,  // 获取接口格式
+        ai_url: document.getElementById('setting-ai-url').value.trim(),  // 获取 API URL
+        ai_api_key: document.getElementById('setting-ai-api-key').value.trim(),  // 获取 API Key
+        ai_model: document.getElementById('setting-ai-model').value.trim()  // 获取模型名称
     };
-    if (!data.ai_base_url || !data.ai_api_key || !data.ai_model) {
+    if (!data.ai_url || !data.ai_api_key || !data.ai_model) {  // 检查必填项
         showToast('请填写所有 AI 设置项', 'error');
         return;
     }
     try {
         await apiRequest('/api/settings', {
-            method: 'PUT',
-            body: JSON.stringify(data)
+            method: 'PUT',                                     // PUT 更新设置
+            body: JSON.stringify(data)                         // 序列化为 JSON
         });
-        showToast('AI 设置已保存');
+        showToast('AI 设置已保存');                            // 显示成功提示
     } catch (error) {
         // 错误已由 apiRequest 统一处理
     }
@@ -1023,72 +1222,179 @@ async function saveAISettings() {
 
 // 缓存解析结果（用于后续导入）
 let parsedData = null;
+let currentInputMode = 'text';  // 当前输入模式：text / file / url
+let selectedFile = null;        // 选中的文件
 
 /**
- * 调用 AI 解析文档内容
+ * 切换输入模式
  */
-async function parseDocument() {
-    const content = document.getElementById('ai-input').value.trim();  // 获取输入内容
-    if (!content) {
-        showToast('请输入要解析的文档内容', 'error');
+function switchInputMode(mode) {
+    currentInputMode = mode;                                   // 更新当前输入模式状态
+    // 切换 tab 高亮
+    document.querySelectorAll('.ai-tab').forEach(t => t.classList.remove('active'));  // 移除所有 tab 的 active
+    document.querySelector(`.ai-tab[data-mode="${mode}"]`).classList.add('active');   // 激活当前 tab
+    // 切换输入区域
+    document.querySelectorAll('.ai-input-mode').forEach(el => el.style.display = 'none');  // 隐藏所有输入区
+    document.getElementById(`input-mode-${mode}`).style.display = 'block';           // 显示当前输入区
+}
+
+/**
+ * 初始化文件拖拽区
+ */
+function setupFileDropZone() {
+    const dropZone = document.getElementById('ai-file-drop');   // 获取拖拽区域
+    const fileInput = document.getElementById('ai-file-input'); // 获取文件输入框
+    if (!dropZone || !fileInput) return;                        // 元素不存在则退出
+
+    dropZone.addEventListener('click', () => fileInput.click());  // 点击拖拽区触发文件选择
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });  // 拖入时高亮
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));  // 拖出时取消高亮
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();                                     // 阻止默认打开文件行为
+        dropZone.classList.remove('dragover');                  // 取消高亮
+        if (e.dataTransfer.files.length > 0) handleFileSelected(e.dataTransfer.files[0]);  // 处理拖放的文件
+    });
+    fileInput.addEventListener('change', () => {
+        if (fileInput.files.length > 0) handleFileSelected(fileInput.files[0]);  // 处理选择的文件
+    });
+}
+
+/**
+ * 处理文件选中
+ */
+function handleFileSelected(file) {
+    selectedFile = file;                                       // 保存选中的文件到全局变量
+    const sizeKB = (file.size / 1024).toFixed(1);             // 计算 KB 大小
+    const sizeMB = (file.size / 1024 / 1024).toFixed(2);     // 计算 MB 大小
+    const sizeStr = file.size > 1024 * 1024 ? `${sizeMB} MB` : `${sizeKB} KB`;  // 超过 1MB 显示 MB
+    document.getElementById('ai-file-name').textContent = `${file.name} (${sizeStr})`;  // 显示文件名和大小
+    document.getElementById('ai-file-info').style.display = 'flex';  // 显示文件信息区
+    document.getElementById('ai-file-drop').style.display = 'none';  // 隐藏拖拽区
+}
+
+/**
+ * 清除文件选择
+ */
+function clearFileInput() {
+    selectedFile = null;                                       // 清空文件引用
+    document.getElementById('ai-file-input').value = '';       // 重置文件输入框
+    document.getElementById('ai-file-info').style.display = 'none';  // 隐藏文件信息区
+    document.getElementById('ai-file-drop').style.display = 'block'; // 显示拖拽区
+}
+
+/**
+ * 渲染解析结果（公共逻辑）
+ */
+function renderParseResult(data) {
+    const resultDiv = document.getElementById('ai-result');     // 获取结果容器
+    const importActions = document.getElementById('ai-import-actions');  // 获取导入操作区
+
+    parsedData = data;                                         // 缓存解析结果（用于后续导入）
+
+    if (!data.providers || data.providers.length === 0) {      // 如果没有识别到提供商
+        resultDiv.innerHTML = '<p class="ai-placeholder">未识别到提供商信息，请检查文档内容</p>';
         return;
     }
 
-    const btn = document.getElementById('btn-ai-parse');       // 获取按钮
-    const resultDiv = document.getElementById('ai-result');     // 获取结果容器
-    const importActions = document.getElementById('ai-import-actions');  // 获取导入按钮容器
+    let html = '';                                             // 构建结果 HTML
+    let totalModels = 0;                                       // 模型总数计数
+    data.providers.forEach(p => {
+        const modelCount = p.models ? p.models.length : 0;    // 当前提供商的模型数
+        totalModels += modelCount;                             // 累加模型总数
+        const apiUrls = p.api_urls || [];                      // 获取 URL 列表
+        const urlsDisplay = apiUrls.length > 0                 // 如果有 URL
+            ? apiUrls.map(u => `<code>${escapeHtml(u.label || 'API')}: ${escapeHtml(u.url)}</code>`).join('<br>')  // 显示标签+URL
+            : escapeHtml(p.base_url || '未识别');              // 否则显示 base_url
+        html += `
+            <div class="ai-result-provider">
+                <div class="ai-result-header">
+                    <strong>${escapeHtml(p.display_name || p.name)}</strong>
+                    <span class="badge ${p.category === 'domestic' ? 'warning' : 'success'}">${escapeHtml(p.category || 'other')}</span>
+                </div>
+                <div class="ai-result-url">${urlsDisplay}</div>
+                <div class="ai-result-desc">${escapeHtml(p.description || '')}</div>
+                ${modelCount > 0 ? `
+                    <div class="ai-result-models">
+                        <span>识别到 ${modelCount} 个模型：</span>
+                        ${p.models.map(m => `<code>${escapeHtml(m.model_id)}</code>`).join(', ')}
+                    </div>
+                ` : '<div class="ai-result-models">未识别到模型信息</div>'}
+            </div>
+        `;
+    });
 
-    btn.disabled = true;                                        // 禁用按钮防止重复点击
-    btn.textContent = '正在解析...';                              // 显示加载状态
-    resultDiv.innerHTML = '<p class="ai-loading">AI 正在分析文档内容，请稍候...</p>';
-    importActions.style.display = 'none';                       // 隐藏导入按钮
+    resultDiv.innerHTML = html;                                // 写入结果 HTML
+    document.getElementById('ai-import-summary').textContent =
+        `将导入 ${data.providers.length} 个提供商，${totalModels} 个模型`;  // 显示导入摘要
+    importActions.style.display = 'flex';                      // 显示导入操作按钮
+}
+
+/**
+ * 调用 AI 解析文档内容（支持文本、文件、URL 三种模式）
+ */
+async function parseDocument() {
+    const btn = document.getElementById('btn-ai-parse');        // 获取解析按钮
+    const resultDiv = document.getElementById('ai-result');     // 获取结果容器
+    const importActions = document.getElementById('ai-import-actions');  // 获取导入操作区
+
+    btn.disabled = true;                                       // 禁用按钮防止重复点击
+    btn.textContent = '正在解析...';                           // 更新按钮文本
+    resultDiv.innerHTML = '<p class="ai-loading">AI 正在分析文档内容，请稍候...</p>';  // 显示加载提示
+    importActions.style.display = 'none';                      // 隐藏导入操作区
 
     try {
-        const response = await apiRequest('/api/ai/parse', {
-            method: 'POST',
-            body: JSON.stringify({ content: content })
-        });
-        parsedData = await response.json();                     // 缓存解析结果
+        let response;                                          // 响应对象
 
-        // 渲染解析结果
-        if (!parsedData.providers || parsedData.providers.length === 0) {
-            resultDiv.innerHTML = '<p class="ai-placeholder">未识别到提供商信息，请检查文档内容</p>';
-            return;
+        if (currentInputMode === 'file' && selectedFile) {
+            // 文件上传模式
+            const formData = new FormData();                   // 创建 FormData 对象
+            formData.append('mode', 'file');                   // 设置模式为文件
+            formData.append('file', selectedFile);             // 添加文件
+            response = await fetch('/api/ai/parse', { method: 'POST', body: formData });  // 发送文件上传请求
+        } else if (currentInputMode === 'url') {
+            // URL 模式
+            const url = document.getElementById('ai-url-input').value.trim();  // 获取 URL
+            if (!url) {                                        // URL 为空则提示
+                showToast('请输入网页 URL', 'error');
+                btn.disabled = false;                          // 恢复按钮
+                btn.textContent = 'AI 解析';                   // 恢复按钮文本
+                resultDiv.innerHTML = '<p class="ai-placeholder">解析结果将显示在这里...</p>';
+                return;
+            }
+            const formData = new FormData();                   // 创建 FormData 对象
+            formData.append('mode', 'url');                    // 设置模式为 URL
+            formData.append('url', url);                       // 添加 URL
+            response = await fetch('/api/ai/parse', { method: 'POST', body: formData });  // 发送 URL 请求
+        } else {
+            // 文本模式
+            const content = document.getElementById('ai-input').value.trim();  // 获取文本内容
+            if (!content) {                                    // 内容为空则提示
+                showToast('请输入要解析的文档内容', 'error');
+                btn.disabled = false;                          // 恢复按钮
+                btn.textContent = 'AI 解析';                   // 恢复按钮文本
+                resultDiv.innerHTML = '<p class="ai-placeholder">解析结果将显示在这里...</p>';
+                return;
+            }
+            response = await fetch('/api/ai/parse', {
+                method: 'POST',                                // POST 请求
+                headers: { 'Content-Type': 'application/json' },  // JSON 格式
+                body: JSON.stringify({ content })              // 发送文本内容
+            });
         }
 
-        let html = '';
-        let totalModels = 0;
-        parsedData.providers.forEach(p => {
-            const modelCount = p.models ? p.models.length : 0;
-            totalModels += modelCount;
-            html += `
-                <div class="ai-result-provider">
-                    <div class="ai-result-header">
-                        <strong>${escapeHtml(p.display_name || p.name)}</strong>
-                        <span class="badge ${p.category === 'domestic' ? 'warning' : 'success'}">${escapeHtml(p.category || 'other')}</span>
-                    </div>
-                    <div class="ai-result-url">${escapeHtml(p.base_url || '未识别')}</div>
-                    <div class="ai-result-desc">${escapeHtml(p.description || '')}</div>
-                    ${modelCount > 0 ? `
-                        <div class="ai-result-models">
-                            <span>识别到 ${modelCount} 个模型：</span>
-                            ${p.models.map(m => `<code>${escapeHtml(m.model_id)}</code>`).join(', ')}
-                        </div>
-                    ` : '<div class="ai-result-models">未识别到模型信息</div>'}
-                </div>
-            `;
-        });
+        if (!response.ok) {                                    // 如果响应状态码非 2xx
+            const err = await response.json().catch(() => ({}));  // 尝试解析错误信息
+            throw new Error(err.error || `请求失败 (${response.status})`);
+        }
 
-        resultDiv.innerHTML = html;
-        document.getElementById('ai-import-summary').textContent =
-            `将导入 ${parsedData.providers.length} 个提供商，${totalModels} 个模型`;
-        importActions.style.display = 'flex';                   // 显示导入按钮
+        const data = await response.json();                    // 解析响应 JSON
+        renderParseResult(data);                               // 渲染解析结果
 
     } catch (error) {
-        resultDiv.innerHTML = `<p class="ai-placeholder">解析失败：${escapeHtml(error.message)}</p>`;
+        resultDiv.innerHTML = `<p class="ai-placeholder">解析失败：${escapeHtml(error.message)}</p>`;  // 显示错误信息
     } finally {
-        btn.disabled = false;                                   // 恢复按钮
-        btn.textContent = 'AI 解析';                             // 恢复按钮文本
+        btn.disabled = false;                                  // 恢复按钮
+        btn.textContent = 'AI 解析';                           // 恢复按钮文本
     }
 }
 
@@ -1096,54 +1402,57 @@ async function parseDocument() {
  * 导入 AI 解析结果
  */
 async function importParsedData() {
-    if (!parsedData || !parsedData.providers || parsedData.providers.length === 0) {
+    if (!parsedData || !parsedData.providers || parsedData.providers.length === 0) {  // 检查是否有数据
         showToast('没有可导入的数据', 'error');
         return;
     }
 
-    const btn = event.target;                                   // 获取按钮
-    btn.disabled = true;                                        // 禁用按钮
-    btn.textContent = '正在导入...';                              // 显示加载状态
+    const btn = event.target;                                  // 获取触发按钮
+    btn.disabled = true;                                       // 禁用按钮防止重复点击
+    btn.textContent = '正在导入...';                           // 更新按钮文本
 
     try {
+        const overwrite = document.getElementById('ai-overwrite-mode').checked;  // 获取是否覆盖已有数据
         const response = await apiRequest('/api/ai/import', {
-            method: 'POST',
-            body: JSON.stringify(parsedData)
+            method: 'POST',                                    // POST 请求
+            body: JSON.stringify({ ...parsedData, overwrite })  // 合并数据和覆盖标志
         });
-        const result = await response.json();
-        showToast(result.message);
-        parsedData = null;                                      // 清空缓存
-        document.getElementById('ai-import-actions').style.display = 'none';  // 隐藏导入按钮
-        loadStats();                                            // 刷新统计数据
-        loadProviders();                                        // 刷新提供商列表
+        const result = await response.json();                  // 解析响应
+        showToast(result.message);                             // 显示导入结果
+        parsedData = null;                                     // 清空缓存数据
+        document.getElementById('ai-import-actions').style.display = 'none';  // 隐藏导入操作区
+        loadStats();                                           // 刷新统计数据
+        loadProviders();                                       // 刷新提供商列表
     } catch (error) {
         // 错误已由 apiRequest 统一处理
     } finally {
-        btn.disabled = false;                                   // 恢复按钮
-        btn.textContent = '确认导入';                             // 恢复按钮文本
+        btn.disabled = false;                                  // 恢复按钮
+        btn.textContent = '确认导入';                          // 恢复按钮文本
     }
 }
 
 /**
- * 清空 AI 输入框
+ * 清空 AI 输入
  */
 function clearAiInput() {
-    document.getElementById('ai-input').value = '';
-    document.getElementById('ai-result').innerHTML = '<p class="ai-placeholder">解析结果将显示在这里...</p>';
-    document.getElementById('ai-import-actions').style.display = 'none';
-    parsedData = null;
+    document.getElementById('ai-input').value = '';            // 清空文本输入框
+    document.getElementById('ai-url-input').value = '';        // 清空 URL 输入框
+    clearFileInput();                                          // 清除文件选择
+    document.getElementById('ai-result').innerHTML = '<p class="ai-placeholder">解析结果将显示在这里...</p>';  // 重置结果区
+    document.getElementById('ai-import-actions').style.display = 'none';  // 隐藏导入操作区
+    parsedData = null;                                         // 清空缓存数据
 }
 
 /**
  * 关闭服务器
  */
 async function shutdownServer() {
-    if (!confirm('确定要关闭服务器吗？关闭后需要重新启动程序。')) return;
+    if (!confirm('确定要关闭服务器吗？关闭后需要重新启动程序。')) return;  // 确认关闭
     try {
-        await fetch('/api/shutdown', { method: 'POST' });
+        await fetch('/api/shutdown', { method: 'POST' });      // 发送关闭请求
         document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-size:20px;color:#888;">服务器已关闭，可以关闭此页面</div>';
     } catch {
-        fetch('/api/shutdown', { method: 'POST' }).catch(() => {});
+        fetch('/api/shutdown', { method: 'POST' }).catch(() => {});  // 重试一次
         document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-size:20px;color:#888;">服务器已关闭，可以关闭此页面</div>';
     }
 }
