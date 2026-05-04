@@ -367,27 +367,30 @@ function renderModels(models) {
                     <th>模型ID</th>
                     <th>显示名称</th>
                     <th>最大Token</th>
+                    <th>多模态</th>
                     <th>计费方式</th>
-                    <th>输入价格</th>
-                    <th>缓存价格</th>
-                    <th>输出价格</th>
-                    <th>按次价格</th>
+                    <th>价格</th>
                     <th>操作</th>
                 </tr>
             </thead>
             <tbody>
                 ${models.map(m => {
                     const isPerRequest = m.pricing_type === 'per_request';
+                    const priceCol = isPerRequest
+                        ? (m.price_per_request != null ? `¥${m.price_per_request}/次` : '-')
+                        : [
+                            m.price_input != null ? `入 ¥${m.price_input}/1M` : null,
+                            m.price_input_cached != null ? `缓 ¥${m.price_input_cached}/1M` : null,
+                            m.price_output != null ? `出 ¥${m.price_output}/1M` : null,
+                          ].filter(Boolean).join(' | ') || '-';
                     return `
                     <tr>
                         <td><code>${escapeHtml(m.model_id)}</code></td>
                         <td>${escapeHtml(m.display_name)}</td>
                         <td>${m.max_tokens ? m.max_tokens.toLocaleString() : '-'}</td>
+                        <td>${m.supports_vision ? '<span class="badge success">是</span>' : '<span class="badge warning">否</span>'}</td>
                         <td>${isPerRequest ? '按次收费' : '按量计费'}</td>
-                        <td>${isPerRequest ? '-' : (m.price_input != null ? `¥${m.price_input}/1M` : '-')}</td>
-                        <td>${isPerRequest ? '-' : (m.price_input_cached != null ? `¥${m.price_input_cached}/1M` : '-')}</td>
-                        <td>${isPerRequest ? '-' : (m.price_output != null ? `¥${m.price_output}/1M` : '-')}</td>
-                        <td>${isPerRequest ? (m.price_per_request != null ? `¥${m.price_per_request}/次` : '-') : '-'}</td>
+                        <td>${priceCol}</td>
                         <td>
                             <button class="btn-small" onclick="showEditModelModal(${m.id})">编辑</button>
                             <button class="btn-small danger" onclick="deleteModel(${m.id})">删除</button>
@@ -492,7 +495,7 @@ function filterModels() {
     }
 
     if (filtered.length === 0) {                               // 如果没有匹配结果
-        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; color: var(--text-secondary);">暂无匹配模型</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color: var(--text-secondary);">暂无匹配模型</td></tr>';
         return;
     }
 
@@ -509,7 +512,7 @@ function filterModels() {
         if (collapse) {                                        // 如果折叠模式开启
             html += `
                 <tr class="provider-group-header" onclick="toggleProviderGroup(this)">
-                    <td colspan="10">
+                    <td colspan="8">
                         <span class="group-toggle">&#x25B6;</span>
                         <strong>${escapeHtml(provider)}</strong>
                         <span class="group-count">(${models.length} 个模型)</span>
@@ -519,17 +522,22 @@ function filterModels() {
         }
         models.forEach(m => {                                  // 遍历分组内的模型
             const isPerRequest = m.pricing_type === 'per_request';
+            const priceCol = isPerRequest
+                ? (m.price_per_request != null ? `¥${m.price_per_request}/次` : '-')
+                : [
+                    m.price_input != null ? `入 ¥${m.price_input}/1M` : null,
+                    m.price_input_cached != null ? `缓 ¥${m.price_input_cached}/1M` : null,
+                    m.price_output != null ? `出 ¥${m.price_output}/1M` : null,
+                  ].filter(Boolean).join(' | ') || '-';
             html += `
                 <tr class="${collapse ? 'provider-group-row collapsed' : ''}">
                     <td>${escapeHtml(m.provider_name)}</td>
                     <td><code>${escapeHtml(m.model_id)}</code></td>
                     <td>${escapeHtml(m.display_name)}</td>
                     <td>${m.max_tokens ? m.max_tokens.toLocaleString() : '-'}</td>
+                    <td>${m.supports_vision ? '<span class="badge success">是</span>' : '<span class="badge warning">否</span>'}</td>
                     <td>${isPerRequest ? '按次收费' : '按量计费'}</td>
-                    <td>${isPerRequest ? '-' : (m.price_input != null ? `¥${m.price_input}/1M` : '-')}</td>
-                    <td>${isPerRequest ? '-' : (m.price_input_cached != null ? `¥${m.price_input_cached}/1M` : '-')}</td>
-                    <td>${isPerRequest ? '-' : (m.price_output != null ? `¥${m.price_output}/1M` : '-')}</td>
-                    <td>${isPerRequest ? (m.price_per_request != null ? `¥${m.price_per_request}/次` : '-') : '-'}</td>
+                    <td>${priceCol}</td>
                     <td>
                         <button class="btn-small" onclick="goToModelEdit(${m.provider_id}, ${m.id})">编辑</button>
                         <button class="btn-small danger" onclick="deleteModelFromList(${m.id})">删除</button>
@@ -541,7 +549,7 @@ function filterModels() {
     tbody.innerHTML = html;                                    // 写入表格 DOM
 
     // 更新排序指示器（▲/▼ 箭头）
-    const sortCols = { max_tokens: 3, price_input: 5, price_input_cached: 6, price_output: 7 };  // 可排序列索引映射
+    const sortCols = { max_tokens: 3 };  // 可排序列索引映射
     document.querySelectorAll('#models-table thead tr:first-child th').forEach((th, i) => {
         th.classList.remove('sort-asc', 'sort-desc');          // 清除所有排序样式
         for (const [col, idx] of Object.entries(sortCols)) {   // 遍历可排序列
