@@ -18,7 +18,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function initApp() {
-    loadStats();                  // 加载仪表盘统计数据
     loadProviders();              // 加载提供商卡片网格
 }
 
@@ -74,7 +73,6 @@ function showPage(page) {
 
     // 根据页面类型加载对应数据
     if (page === 'dashboard') {
-        loadStats();       // 刷新统计数据
         loadProviders();   // 刷新提供商网格
     } else if (page === 'providers') {
         loadProvidersList();  // 加载提供商管理列表
@@ -193,10 +191,6 @@ async function apiRequest(url, options = {}) {
 }
 
 // ====================== 统计数据 ======================
-
-async function loadStats() {
-    // 统计数据不再显示数量，保留函数避免调用报错
-}
 
 // ====================== 提供商卡片网格（仪表盘） ======================
 
@@ -589,7 +583,6 @@ async function deleteModelFromList(modelId) {
         await apiRequest(`/api/models/${modelId}`, { method: 'DELETE' });  // 发送删除请求
         showToast('模型已删除');                                 // 显示成功提示
         loadAllModels();                                        // 刷新模型列表
-        loadStats();                                            // 刷新统计数据
     } catch (error) {
         // 错误已由 apiRequest 统一处理
     }
@@ -639,7 +632,6 @@ async function deleteKeyFromList(keyId) {
         await apiRequest(`/api/keys/${keyId}`, { method: 'DELETE' });  // 发送删除请求
         showToast('密钥已删除');                                 // 显示成功提示
         loadAllKeys();                                          // 刷新密钥列表
-        loadStats();                                            // 刷新统计数据
     } catch (error) {
         // 错误已由 apiRequest 统一处理
     }
@@ -758,7 +750,6 @@ function showAddProviderModal() {
             closeModal();                                       // 关闭模态框
             showToast('提供商已创建');                          // 显示成功提示
             loadProviders();                                    // 刷新提供商列表
-            loadStats();                                        // 刷新统计数据
         } catch (error) {}                                     // 错误已由 apiRequest 处理
     });
     openModal();                                                // 打开模态框
@@ -832,7 +823,6 @@ async function deleteProvider(providerId) {
         await apiRequest(`/api/providers/${providerId}`, { method: 'DELETE' });
         showToast('提供商已删除');                                // 显示成功提示
         loadProviders();                                        // 刷新提供商列表
-        loadStats();                                            // 刷新统计数据
         if (currentPage === 'providers') {
             loadProvidersList();                                // 刷新管理列表
         }
@@ -1472,7 +1462,6 @@ async function importParsedData() {
         showToast(result.message);                             // 显示导入结果
         parsedData = null;                                     // 清空缓存数据
         document.getElementById('ai-import-actions').style.display = 'none';  // 隐藏导入操作区
-        loadStats();                                           // 刷新统计数据
         loadProviders();                                       // 刷新提供商列表
     } catch (error) {
         // 错误已由 apiRequest 统一处理

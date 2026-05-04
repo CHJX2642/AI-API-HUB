@@ -48,7 +48,16 @@
       "Bash(taskkill //F //PID 24468)",
       "Bash(taskkill //F //PID 42912)",
       "Bash(sqlite3 *)",
-      "Bash(D:/Users/21023/AppData/Local/Programs/Python/Python313/python.exe *)"
+      "Bash(D:/Users/21023/AppData/Local/Programs/Python/Python313/python.exe *)",
+      "Bash(tasklist)",
+      "Bash(taskkill //F //IM AI-API-Hub.exe)",
+      "Bash(taskkill //F //PID 22276)",
+      "Bash(taskkill //F //PID 42160)",
+      "Bash(taskkill //F //PID 7768)",
+      "Bash(pkill -f \"python.*5001\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git tag *)"
     ]
   }
 }
