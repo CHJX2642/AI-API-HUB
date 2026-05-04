@@ -52,6 +52,7 @@ def init_db():
     db_name = current_app.config.get('DB_NAME', 'ai_api_hub.db')
     db_path = os.path.join(get_data_dir(), db_name)
     conn = sqlite3.connect(db_path)     # 建立连接
+    conn.row_factory = sqlite3.Row      # 支持字典方式访问
     cursor = conn.cursor()              # 创建游标
 
     # ====== 创建 API 提供商表 ======
