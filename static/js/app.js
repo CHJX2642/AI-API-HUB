@@ -195,15 +195,7 @@ async function apiRequest(url, options = {}) {
 // ====================== 统计数据 ======================
 
 async function loadStats() {
-    try {
-        const response = await apiRequest('/api/stats');        // 请求统计数据
-        const stats = await response.json();                    // 解析 JSON
-        document.getElementById('providers-count').textContent = stats.providers_count;  // 显示提供商数
-        document.getElementById('models-count').textContent = stats.models_count;        // 显示模型数
-        document.getElementById('keys-count').textContent = stats.keys_count;            // 显示密钥数
-    } catch (error) {
-        // 错误已由 apiRequest 统一处理
-    }
+    // 统计数据不再显示数量，保留函数避免调用报错
 }
 
 // ====================== 提供商卡片网格（仪表盘） ======================
@@ -377,9 +369,8 @@ function renderModels(models) {
                     <th>最大Token</th>
                     <th>多模态</th>
                     <th>函数调用</th>
-                    <th>输入价格</th>
-                    <th>缓存价格</th>
-                    <th>输出价格</th>
+                    <th>计费方式</th>
+                    <th>价格</th>
                     <th>操作</th>
                 </tr>
             </thead>
@@ -391,9 +382,11 @@ function renderModels(models) {
                         <td>${m.max_tokens ? m.max_tokens.toLocaleString() : '-'}</td>
                         <td>${m.supports_vision ? '<span class="badge success">是</span>' : '<span class="badge warning">否</span>'}</td>
                         <td>${m.supports_function_calling ? '<span class="badge success">是</span>' : '<span class="badge warning">否</span>'}</td>
-                        <td>${m.price_input ? `¥${m.price_input}/1M` : '-'}</td>
-                        <td>${m.price_input_cached ? `¥${m.price_input_cached}/1M` : '-'}</td>
-                        <td>${m.price_output ? `¥${m.price_output}/1M` : '-'}</td>
+                        <td>${m.pricing_type === 'per_request' ? '按次收费' : '按量计费'}</td>
+                        <td>${m.pricing_type === 'per_request'
+                            ? (m.price_per_request ? `¥${m.price_per_request}/次` : '-')
+                            : (m.price_input ? `入¥${m.price_input}/1M` : '-') + (m.price_output ? ` 出¥${m.price_output}/1M` : '')
+                        }</td>
                         <td>
                             <button class="btn-small" onclick="showEditModelModal(${m.id})">编辑</button>
                             <button class="btn-small danger" onclick="deleteModel(${m.id})">删除</button>
@@ -523,6 +516,9 @@ function filterModels() {
             `;
         }
         models.forEach(m => {                                  // 遍历分组内的模型
+            const pricingDisplay = m.pricing_type === 'per_request'
+                ? (m.price_per_request ? `¥${m.price_per_request}/次` : '-')
+                : (m.price_input ? `入¥${m.price_input}/1M` : '-') + (m.price_output ? ` 出¥${m.price_output}/1M` : '');
             html += `
                 <tr class="${collapse ? 'provider-group-row collapsed' : ''}">
                     <td>${escapeHtml(m.provider_name)}</td>
@@ -531,9 +527,8 @@ function filterModels() {
                     <td>${m.max_tokens ? m.max_tokens.toLocaleString() : '-'}</td>
                     <td>${m.supports_vision ? '<span class="badge success">是</span>' : '<span class="badge warning">否</span>'}</td>
                     <td>${m.supports_function_calling ? '<span class="badge success">是</span>' : '<span class="badge warning">否</span>'}</td>
-                    <td>${m.price_input ? `¥${m.price_input}/1M` : '-'}</td>
-                    <td>${m.price_input_cached ? `¥${m.price_input_cached}/1M` : '-'}</td>
-                    <td>${m.price_output ? `¥${m.price_output}/1M` : '-'}</td>
+                    <td>${m.pricing_type === 'per_request' ? '按次收费' : '按量计费'}</td>
+                    <td>${pricingDisplay}</td>
                     <td>
                         <button class="btn-small" onclick="goToModelEdit(${m.provider_id}, ${m.id})">编辑</button>
                         <button class="btn-small danger" onclick="deleteModelFromList(${m.id})">删除</button>
@@ -545,7 +540,7 @@ function filterModels() {
     tbody.innerHTML = html;                                    // 写入表格 DOM
 
     // 更新排序指示器（▲/▼ 箭头）
-    const sortCols = { max_tokens: 3, price_input: 6, price_input_cached: 7, price_output: 8 };  // 可排序列索引映射
+    const sortCols = { max_tokens: 3 };  // 可排序列索引映射（价格列已合并，暂不支持排序）
     document.querySelectorAll('#models-table thead tr:first-child th').forEach((th, i) => {
         th.classList.remove('sort-asc', 'sort-desc');          // 清除所有排序样式
         for (const [col, idx] of Object.entries(sortCols)) {   // 遍历可排序列
@@ -882,16 +877,31 @@ function showAddModelModal() {
                 </select>
             </div>
             <div class="form-group">
-                <label>输入价格 (¥/1M tokens)</label>
-                <input type="number" name="price_input" step="0.01" placeholder="例: 5">
+                <label>计费方式</label>
+                <select name="pricing_type" onchange="togglePricingFields(this)">
+                    <option value="per_token">按量计费 (tokens)</option>
+                    <option value="per_request">按次收费</option>
+                </select>
             </div>
-            <div class="form-group">
-                <label>缓存命中价格 (¥/1M tokens)</label>
-                <input type="number" name="price_input_cached" step="0.01" placeholder="例: 1">
+            <div class="pricing-per-token">
+                <div class="form-group">
+                    <label>输入价格 (¥/1M tokens)</label>
+                    <input type="number" name="price_input" step="0.01" placeholder="例: 5">
+                </div>
+                <div class="form-group">
+                    <label>缓存命中价格 (¥/1M tokens)</label>
+                    <input type="number" name="price_input_cached" step="0.01" placeholder="例: 1">
+                </div>
+                <div class="form-group">
+                    <label>输出价格 (¥/1M tokens)</label>
+                    <input type="number" name="price_output" step="0.01" placeholder="例: 15">
+                </div>
             </div>
-            <div class="form-group">
-                <label>输出价格 (¥/1M tokens)</label>
-                <input type="number" name="price_output" step="0.01" placeholder="例: 15">
+            <div class="pricing-per-request" style="display:none;">
+                <div class="form-group">
+                    <label>每次请求价格 (¥/次)</label>
+                    <input type="number" name="price_per_request" step="0.001" placeholder="例: 0.01">
+                </div>
             </div>
             <div class="form-actions">
                 <button type="button" class="btn-secondary" onclick="closeModal()">取消</button>
@@ -909,6 +919,7 @@ function showAddModelModal() {
         data.price_input = data.price_input ? parseFloat(data.price_input) : null;
         data.price_input_cached = data.price_input_cached ? parseFloat(data.price_input_cached) : null;
         data.price_output = data.price_output ? parseFloat(data.price_output) : null;
+        data.price_per_request = data.price_per_request ? parseFloat(data.price_per_request) : null;
         try {
             await apiRequest(`/api/providers/${currentProviderId}/models`, {
                 method: 'POST',
@@ -972,16 +983,31 @@ async function showEditModelModal(modelId) {
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>输入价格 (¥/1M tokens)</label>
-                    <input type="number" name="price_input" step="0.01" value="${model.price_input || ''}">
+                    <label>计费方式</label>
+                    <select name="pricing_type" onchange="togglePricingFields(this)">
+                        <option value="per_token" ${model.pricing_type !== 'per_request' ? 'selected' : ''}>按量计费 (tokens)</option>
+                        <option value="per_request" ${model.pricing_type === 'per_request' ? 'selected' : ''}>按次收费</option>
+                    </select>
                 </div>
-                <div class="form-group">
-                    <label>缓存命中价格 (¥/1M tokens)</label>
-                    <input type="number" name="price_input_cached" step="0.01" value="${model.price_input_cached || ''}">
+                <div class="pricing-per-token" ${model.pricing_type === 'per_request' ? 'style="display:none;"' : ''}>
+                    <div class="form-group">
+                        <label>输入价格 (¥/1M tokens)</label>
+                        <input type="number" name="price_input" step="0.01" value="${model.price_input || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label>缓存命中价格 (¥/1M tokens)</label>
+                        <input type="number" name="price_input_cached" step="0.01" value="${model.price_input_cached || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label>输出价格 (¥/1M tokens)</label>
+                        <input type="number" name="price_output" step="0.01" value="${model.price_output || ''}">
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label>输出价格 (¥/1M tokens)</label>
-                    <input type="number" name="price_output" step="0.01" value="${model.price_output || ''}">
+                <div class="pricing-per-request" ${model.pricing_type === 'per_request' ? '' : 'style="display:none;"'}>
+                    <div class="form-group">
+                        <label>每次请求价格 (¥/次)</label>
+                        <input type="number" name="price_per_request" step="0.001" value="${model.price_per_request || ''}">
+                    </div>
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn-secondary" onclick="closeModal()">取消</button>
@@ -999,6 +1025,7 @@ async function showEditModelModal(modelId) {
             data.price_input = data.price_input ? parseFloat(data.price_input) : null;
             data.price_input_cached = data.price_input_cached ? parseFloat(data.price_input_cached) : null;
             data.price_output = data.price_output ? parseFloat(data.price_output) : null;
+            data.price_per_request = data.price_per_request ? parseFloat(data.price_per_request) : null;
             try {
                 await apiRequest(`/api/models/${modelId}`, {
                     method: 'PUT',
@@ -1162,6 +1189,21 @@ async function deleteKey(keyId) {
         }
     } catch (error) {
         // 错误已由 apiRequest 统一处理
+    }
+}
+
+// ====================== 计费方式切换 ======================
+
+function togglePricingFields(select) {
+    const form = select.closest('form');
+    const perToken = form.querySelector('.pricing-per-token');
+    const perRequest = form.querySelector('.pricing-per-request');
+    if (select.value === 'per_request') {
+        perToken.style.display = 'none';
+        perRequest.style.display = 'block';
+    } else {
+        perToken.style.display = 'block';
+        perRequest.style.display = 'none';
     }
 }
 

@@ -33,7 +33,9 @@ AI_PARSE_PROMPT = """你是一个 API 信息提取助手。用户会给你一段
           "supports_function_calling": true或false,
           "price_input": 输入价格每百万tokens(1M)，单位人民币元(数字或null),
           "price_input_cached": 缓存命中输入价格每百万tokens(1M)，单位人民币元(数字或null),
-          "price_output": 输出价格每百万tokens(1M)，单位人民币元(数字或null)
+          "price_output": 输出价格每百万tokens(1M)，单位人民币元(数字或null),
+          "pricing_type": "per_token"或"per_request"(按次收费时设为per_request，按量计费设为per_token或null),
+          "price_per_request": 每次请求价格，单位人民币元(数字或null，仅按次收费时填写)
         }
       ]
     }
@@ -44,6 +46,7 @@ AI_PARSE_PROMPT = """你是一个 API 信息提取助手。用户会给你一段
 - 如果文档中没有提到某个字段，设为 null
 - category 根据厂商判断：国内厂商用 domestic，国外用 international，不确定用 other
 - 价格统一使用 "每百万tokens(1M)" 为单位，如果是其他格式请转换
+- 如果是按次收费的模型，pricing_type 设为 "per_request"，price_per_request 填写每次请求的价格；如果是按量计费，pricing_type 设为 "per_token" 或 null
 - name 使用英文小写标准标识名，如：openai, anthropic, google, deepseek, alibaba/qwen, baidu, zhipu, moonshot, volcengine, xiaomi, spark, yi, baichuan, minimax, siliconflow, stepfun, mistral, groq
 - 如果文档中没有模型信息，models 可以为空数组
 - 只返回 JSON，不要有其他任何内容"""

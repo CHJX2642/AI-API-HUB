@@ -49,15 +49,12 @@
                 <!-- 统计数据卡片 -->
                 <div class="stats-grid">
                     <div class="stat-card">
-                        <div class="stat-number" id="providers-count">0</div>
                         <div class="stat-label">API提供商</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-number" id="models-count">0</div>
                         <div class="stat-label">模型数量</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-number" id="keys-count">0</div>
                         <div class="stat-label">API密钥</div>
                     </div>
                 </div>
@@ -109,9 +106,8 @@
                                 <th class="sortable" onclick="sortModelsBy('max_tokens')">最大Token</th>
                                 <th>多模态</th>
                                 <th>函数调用</th>
-                                <th class="sortable" onclick="sortModelsBy('price_input')">输入价格</th>
-                                <th class="sortable" onclick="sortModelsBy('price_input_cached')">缓存价格</th>
-                                <th class="sortable" onclick="sortModelsBy('price_output')">输出价格</th>
+                                <th>计费方式</th>
+                                <th>价格</th>
                                 <th>操作</th>
                             </tr>
                             <tr class="filter-row">
@@ -133,7 +129,6 @@
                                         <option value="0">否</option>
                                     </select>
                                 </th>
-                                <th></th>
                                 <th></th>
                                 <th></th>
                                 <th></th>

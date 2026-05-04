@@ -52,8 +52,9 @@ def create_model(provider_id):
         cursor.execute('''
             INSERT INTO api_models (provider_id, model_id, display_name, description,
                 max_tokens, supports_vision, supports_function_calling,
-                price_input, price_input_cached, price_output)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                price_input, price_input_cached, price_output,
+                pricing_type, price_per_request)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             provider_id,                   # 所属提供商 ID
             data['model_id'],              # 模型标识（必填）
@@ -64,7 +65,9 @@ def create_model(provider_id):
             1 if data.get('supports_function_calling') else 0,  # 是否支持函数调用
             data.get('price_input'),       # 输入价格
             data.get('price_input_cached'),# 缓存价格
-            data.get('price_output')       # 输出价格
+            data.get('price_output'),      # 输出价格
+            data.get('pricing_type', 'per_token'),  # 计费方式
+            data.get('price_per_request')  # 按次收费价格
         ))
         conn.commit()
         return jsonify({'id': cursor.lastrowid, 'message': 'Created successfully'}), 201
@@ -86,7 +89,8 @@ def update_model(model_id):
             UPDATE api_models SET
                 model_id=?, display_name=?, description=?,
                 max_tokens=?, supports_vision=?, supports_function_calling=?,
-                price_input=?, price_input_cached=?, price_output=?
+                price_input=?, price_input_cached=?, price_output=?,
+                pricing_type=?, price_per_request=?
             WHERE id=?
         ''', (
             data['model_id'],
@@ -98,6 +102,8 @@ def update_model(model_id):
             data.get('price_input'),
             data.get('price_input_cached'),
             data.get('price_output'),
+            data.get('pricing_type', 'per_token'),
+            data.get('price_per_request'),
             model_id
         ))
         conn.commit()

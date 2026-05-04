@@ -192,9 +192,9 @@ body {
 }
 
 .stat-label {
-    font-size: 14px;
-    color: var(--text-secondary);
-    margin-top: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
 }
 
 /* ========== 类别筛选 ========== */

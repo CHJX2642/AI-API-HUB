@@ -290,7 +290,8 @@ def ai_import():
                             UPDATE api_models SET
                                 display_name=?, description=?, max_tokens=?,
                                 supports_vision=?, supports_function_calling=?,
-                                price_input=?, price_input_cached=?, price_output=?
+                                price_input=?, price_input_cached=?, price_output=?,
+                                pricing_type=?, price_per_request=?
                             WHERE id = ?
                         ''', (
                             model_data.get('display_name', ''),
@@ -301,6 +302,8 @@ def ai_import():
                             model_data.get('price_input'),
                             model_data.get('price_input_cached'),
                             model_data.get('price_output'),
+                            model_data.get('pricing_type', 'per_token'),
+                            model_data.get('price_per_request'),
                             existing_model['id']
                         ))
                     else:
@@ -314,7 +317,9 @@ def ai_import():
                                 supports_function_calling = CASE WHEN ? = 1 THEN 1 ELSE supports_function_calling END,
                                 price_input             = COALESCE(price_input, ?),
                                 price_input_cached      = COALESCE(price_input_cached, ?),
-                                price_output            = COALESCE(price_output, ?)
+                                price_output            = COALESCE(price_output, ?),
+                                pricing_type            = COALESCE(NULLIF(pricing_type, ''), ?),
+                                price_per_request       = COALESCE(price_per_request, ?)
                             WHERE id = ?
                         ''', (
                             model_data.get('display_name', ''),
@@ -325,6 +330,8 @@ def ai_import():
                             model_data.get('price_input'),
                             model_data.get('price_input_cached'),
                             model_data.get('price_output'),
+                            model_data.get('pricing_type', 'per_token'),
+                            model_data.get('price_per_request'),
                             existing_model['id']
                         ))
                     updated_models += 1
@@ -333,8 +340,9 @@ def ai_import():
                     cursor.execute('''
                         INSERT INTO api_models (provider_id, model_id, display_name, description,
                             max_tokens, supports_vision, supports_function_calling,
-                            price_input, price_input_cached, price_output)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            price_input, price_input_cached, price_output,
+                            pricing_type, price_per_request)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         provider_id, model_id,
                         model_data.get('display_name', ''),
@@ -344,7 +352,9 @@ def ai_import():
                         1 if model_data.get('supports_function_calling') else 0,
                         model_data.get('price_input'),
                         model_data.get('price_input_cached'),
-                        model_data.get('price_output')
+                        model_data.get('price_output'),
+                        model_data.get('pricing_type', 'per_token'),
+                        model_data.get('price_per_request')
                     ))
                     imported_models += 1
 

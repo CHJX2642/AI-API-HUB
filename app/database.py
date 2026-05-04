@@ -122,6 +122,8 @@ def init_db():
         'ALTER TABLE api_providers ADD COLUMN openai_url TEXT',            # OpenAI URL 字段
         'ALTER TABLE api_providers ADD COLUMN anthropic_url TEXT',         # Anthropic URL 字段
         'ALTER TABLE api_providers ADD COLUMN api_urls TEXT',              # 自定义 URL 列表字段
+        'ALTER TABLE api_models ADD COLUMN pricing_type TEXT DEFAULT "per_token"',  # 计费方式
+        'ALTER TABLE api_models ADD COLUMN price_per_request REAL',        # 按次收费价格（元/次）
     ]
     for sql in migrations:              # 遍历所有迁移语句
         try:
