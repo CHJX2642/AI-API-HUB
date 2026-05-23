@@ -82,6 +82,8 @@ function showPage(page) {
         loadAllKeys();     // 加载全局密钥列表
     } else if (page === 'settings') {
         loadAISettings();  // 加载 AI 设置
+    } else if (page === 'relay') {
+        loadRelaySettings();  // 加载转接设置
     }
 }
 
@@ -1481,6 +1483,148 @@ function clearAiInput() {
     document.getElementById('ai-result').innerHTML = '<p class="ai-placeholder">解析结果将显示在这里...</p>';  // 重置结果区
     document.getElementById('ai-import-actions').style.display = 'none';  // 隐藏导入操作区
     parsedData = null;                                         // 清空缓存数据
+}
+
+// ====================== API 转接 ======================
+
+// 三把协议 Key 的存储 key 名映射
+const RELAY_KEY_NAMES = {
+    chat: 'relay_key_chat',
+    anthropic: 'relay_key_anthropic',
+    responses: 'relay_key_responses',
+};
+const RELAY_KEY_IDS = {
+    chat: 'relay-key-chat',
+    anthropic: 'relay-key-anthropic',
+    responses: 'relay-key-responses',
+};
+
+async function loadRelaySettings() {
+    try {
+        const response = await apiRequest('/api/settings');
+        const settings = await response.json();
+        // 加载三把协议 Key
+        for (const [proto, keyName] of Object.entries(RELAY_KEY_NAMES)) {
+            const val = settings[keyName] || '';
+            const el = document.getElementById(RELAY_KEY_IDS[proto]);
+            if (el) el.value = val;
+        }
+        // 加载转接开关状态
+        const relayEnabled = settings.relay_enabled === '1';
+        document.getElementById('relay-enabled').checked = relayEnabled;
+        toggleRelayEnabled();
+        // 加载可用模型
+        loadRelayModels();
+    } catch (error) {
+        // 错误已由 apiRequest 统一处理
+    }
+}
+
+async function saveRelaySettings() {
+    // 至少填一个 Key
+    let anyKey = false;
+    const payload = {};
+    for (const [proto, keyName] of Object.entries(RELAY_KEY_NAMES)) {
+        const val = document.getElementById(RELAY_KEY_IDS[proto]).value.trim();
+        payload[keyName] = val;
+        if (val) anyKey = true;
+    }
+    if (!anyKey) {
+        showToast('请至少生成一个 API Key', 'error');
+        return;
+    }
+    try {
+        payload.relay_enabled = document.getElementById('relay-enabled').checked ? '1' : '0';
+        await apiRequest('/api/settings', {
+            method: 'PUT',
+            body: JSON.stringify(payload)
+        });
+        showToast('转接设置已保存');
+        loadRelaySettings();
+    } catch (error) {
+        // 错误已由 apiRequest 统一处理
+    }
+}
+
+function generateRelayKey(protocol) {
+    // 生成随机 Key：sk-{proto}- + 40 位十六进制字符
+    const chars = '0123456789abcdef';
+    let key = 'sk-' + protocol + '-';
+    for (let i = 0; i < 40; i++) {
+        key += chars[Math.floor(Math.random() * chars.length)];
+    }
+    const elId = RELAY_KEY_IDS[protocol] || 'relay-key-chat';
+    document.getElementById(elId).value = key;
+}
+
+function copyRelayKey(protocol) {
+    const elId = RELAY_KEY_IDS[protocol] || 'relay-key-chat';
+    const key = document.getElementById(elId).value;
+    if (!key) {
+        showToast('请先生成 API Key', 'error');
+        return;
+    }
+    navigator.clipboard.writeText(key).then(() => {
+        showToast('API Key 已复制到剪贴板');
+    }).catch(() => {
+        showToast('复制失败，请手动复制');
+    });
+}
+
+async function loadRelayModels() {
+    try {
+        // 获取所有模型（带提供商和密钥信息）
+        const response = await apiRequest('/api/models');
+        const models = await response.json();
+        const list = document.getElementById('relay-models-list');
+
+        if (models.length === 0) {
+            list.innerHTML = '<p style="color: var(--text-secondary);">暂无可用模型，请先添加提供商和模型</p>';
+            return;
+        }
+
+        // 按提供商分组
+        const groups = {};
+        models.forEach(m => {
+            const key = m.provider_name || '未知';
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(m);
+        });
+
+        let html = '<div class="relay-models-grid">';
+        for (const [provider, providerModels] of Object.entries(groups)) {
+            html += `
+                <div class="relay-model-group">
+                    <h4>${escapeHtml(provider)}</h4>
+                    <div class="relay-model-tags">
+                        ${providerModels.map(m => `<code class="model-tag">${escapeHtml(m.model_id)}</code>`).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        html += '</div>';
+        list.innerHTML = html;
+    } catch (error) {
+        // 错误已由 apiRequest 统一处理
+    }
+}
+
+function toggleRelayEnabled() {
+    const checked = document.getElementById('relay-enabled').checked;
+    const toggleLabel = document.querySelector('label.toggle-switch');
+    if (toggleLabel) {
+        toggleLabel.classList.toggle('active', checked);
+    }
+    document.getElementById('relay-status-text').textContent = checked ? '已开启' : '已关闭';
+}
+
+function switchRelayTab(protocol) {
+    // 切换 tab 高亮
+    document.querySelectorAll('.relay-tab').forEach(t => t.classList.remove('active'));
+    document.querySelector(`.relay-tab[onclick="switchRelayTab('${protocol}')"]`)?.classList.add('active');
+    // 切换代码区
+    document.querySelectorAll('.relay-code').forEach(el => el.style.display = 'none');
+    document.getElementById(`relay-code-${protocol}`).style.display = 'block';
 }
 
 /**

@@ -31,6 +31,9 @@
                 <a href="#" class="nav-item" data-page="ai-parse">
                     <span class="icon">&#x1F9E0;</span> AI解析
                 </a>
+                <a href="#" class="nav-item" data-page="relay">
+                    <span class="icon">&#x1F517;</span> API转接
+                </a>
                 <a href="#" class="nav-item" data-page="settings">
                     <span class="icon">&#x2699;&#xFE0F;</span> AI设置
                 </a>
@@ -210,6 +213,120 @@
                             <button class="btn-primary" onclick="importParsedData()">&#x1F4E5; 确认导入</button>
                             <span id="ai-import-summary"></span>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- API 转接页面：配置统一 API Key + 使用示例 + 模型列表 -->
+            <div id="relay-page" class="page">
+                <h2>API 转接</h2>
+                <p class="page-desc">三把 Key 分别对应三种输出协议，用哪个 Key 就自动输出对应格式</p>
+                <div class="relay-container">
+                    <!-- 配置区：三把协议 Key -->
+                    <div class="relay-config">
+                        <h3>转接配置</h3>
+
+                        <!-- Chat 专用 Key -->
+                        <div class="relay-key-card">
+                            <div class="relay-key-header">
+                                <span class="relay-key-badge badge-chat">Chat</span>
+                                <span class="relay-key-label">OpenAI Chat 专用 Key</span>
+                            </div>
+                            <div class="relay-key-row">
+                                <input type="text" id="relay-key-chat" placeholder="点击右侧生成...">
+                                <button class="btn-small" onclick="generateRelayKey('chat')">生成</button>
+                                <button class="btn-copy" onclick="copyRelayKey('chat')">复制</button>
+                            </div>
+                            <small>输出强制为 OpenAI Chat 格式 · 端点 <code>/v1/chat/completions</code> · 适配 Cherry Studio / OpenCat 等</small>
+                        </div>
+
+                        <!-- Anthropic 专用 Key -->
+                        <div class="relay-key-card">
+                            <div class="relay-key-header">
+                                <span class="relay-key-badge badge-anthropic">Anthropic</span>
+                                <span class="relay-key-label">Anthropic 专用 Key</span>
+                            </div>
+                            <div class="relay-key-row">
+                                <input type="text" id="relay-key-anthropic" placeholder="点击右侧生成...">
+                                <button class="btn-small" onclick="generateRelayKey('anthropic')">生成</button>
+                                <button class="btn-copy" onclick="copyRelayKey('anthropic')">复制</button>
+                            </div>
+                            <small>输出强制为 Anthropic Messages 格式 · 端点 <code>/v1/messages</code> · 适配 Claude Code</small>
+                        </div>
+
+                        <!-- Responses 专用 Key -->
+                        <div class="relay-key-card">
+                            <div class="relay-key-header">
+                                <span class="relay-key-badge badge-responses">Responses</span>
+                                <span class="relay-key-label">OpenAI Responses 专用 Key</span>
+                            </div>
+                            <div class="relay-key-row">
+                                <input type="text" id="relay-key-responses" placeholder="点击右侧生成...">
+                                <button class="btn-small" onclick="generateRelayKey('responses')">生成</button>
+                                <button class="btn-copy" onclick="copyRelayKey('responses')">复制</button>
+                            </div>
+                            <small>输出强制为 OpenAI Responses 格式 · 端点 <code>/v1/responses</code> · 适配 Codex CLI</small>
+                        </div>
+
+                        <div class="form-group" style="margin-top:12px;">
+                            <label>转接开关</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="relay-enabled" onchange="toggleRelayEnabled()">
+                                <span class="toggle-slider"></span>
+                                <span id="relay-status-text">已关闭</span>
+                            </label>
+                            <small>关闭后所有 /v1/ 转接端点将返回 503</small>
+                        </div>
+                        <div class="form-actions">
+                            <button class="btn-primary" onclick="saveRelaySettings()">保存设置</button>
+                        </div>
+                    </div>
+
+                    <!-- 使用示例区 -->
+                    <div class="relay-examples">
+                        <h3>使用示例</h3>
+                        <div class="relay-tabs">
+                            <button class="relay-tab active" onclick="switchRelayTab('chat')">Chat Completions</button>
+                            <button class="relay-tab" onclick="switchRelayTab('responses')">Responses API</button>
+                            <button class="relay-tab" onclick="switchRelayTab('anthropic')">Anthropic Messages</button>
+                        </div>
+                        <div class="relay-code-container">
+                            <pre class="relay-code" id="relay-code-chat"><code>curl -s http://127.0.0.1:5000/v1/chat/completions \
+  -H "Authorization: Bearer &lt;Chat 专用 Key&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [
+      {"role": "system", "content": "你是一个有帮助的助手"},
+      {"role": "user", "content": "你好"}
+    ]
+  }'</code></pre>
+                            <pre class="relay-code" id="relay-code-responses" style="display:none;"><code>curl -s http://127.0.0.1:5000/v1/responses \
+  -H "Authorization: Bearer &lt;Responses 专用 Key&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "input": "你好，请介绍一下你自己",
+    "instructions": "你是一个有帮助的助手"
+  }'</code></pre>
+                            <pre class="relay-code" id="relay-code-anthropic" style="display:none;"><code>curl -s http://127.0.0.1:5000/v1/messages \
+  -H "x-api-key: &lt;Anthropic 专用 Key&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-sonnet-4-20250514",
+    "max_tokens": 1024,
+    "messages": [
+      {"role": "user", "content": "你好"}
+    ]
+  }'</code></pre>
+                        </div>
+                    </div>
+
+                    <!-- 可用模型列表 -->
+                    <div class="relay-models">
+                        <h3>可用模型</h3>
+                        <p class="page-desc">以下模型已配置密钥，可通过转接端点直接调用</p>
+                        <div id="relay-models-list"></div>
                     </div>
                 </div>
             </div>

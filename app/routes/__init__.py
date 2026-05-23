@@ -8,6 +8,7 @@ from app.routes.keys import bp as keys_bp             # 密钥 CRUD 路由
 from app.routes.settings import bp as settings_bp     # 设置读写路由
 from app.routes.stats import bp as stats_bp           # 统计数据路由
 from app.routes.ai import bp as ai_bp                 # AI 解析+导入路由
+from app.routes.relay import bp as relay_bp           # API 转接路由
 from app.routes.system import bp as system_bp         # 系统路由（首页+关闭）
 
 
@@ -23,3 +24,4 @@ def register_blueprints(app):
     app.register_blueprint(settings_bp)     # 注册设置路由（/api/settings）
     app.register_blueprint(stats_bp)        # 注册统计路由（/api/stats）
     app.register_blueprint(ai_bp)           # 注册 AI 路由（/api/ai）
+    app.register_blueprint(relay_bp)        # 注册 API 转接路由（/v1/）

@@ -6,7 +6,9 @@ dist/
 build/
 *.db
 *.ico
+*.spec
 .env
 .venv/
 venv/
 config_export.json
+.claude/

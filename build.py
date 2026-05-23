@@ -40,7 +40,6 @@ def build():
         f'--add-data=templates{sep}templates',
         f'--add-data=static{sep}static',
         '--hidden-import=flask',
-        '--hidden-import=flask_cors',
         '--hidden-import=sqlite3',
         '--hidden-import=docx',
         '--hidden-import=PyPDF2',
@@ -49,7 +48,6 @@ def build():
         '--hidden-import=lxml',
         '--hidden-import=requests',
         '--collect-all=flask',
-        '--collect-all=flask_cors',
     ]
 
     if icon_path and os.path.exists(icon_path):

@@ -57,7 +57,17 @@
       "Bash(pkill -f \"python.*5001\")",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git tag *)"
+      "Bash(git tag *)",
+      "Bash(python run.py)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(echo \"Server PID: $!\")",
+      "mcp__ide__executeCode",
+      "Bash(python3 *)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebSearch",
+      "WebFetch(domain:www.producthunt.com)",
+      "WebFetch(domain:global.v2ex.co)"
     ]
   }
 }

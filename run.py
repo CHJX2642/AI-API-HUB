@@ -37,6 +37,10 @@ AI_MAX_TOKENS = 4000           # AI 最大输出 token 数
 URL_FETCH_TIMEOUT = 15         # 网页抓取超时（秒）
 URL_MAX_LENGTH = 100000        # 网页内容最大字符数
 
+# API 转接配置
+RELAY_TIMEOUT = 120            # 转接请求超时（秒）
+RELAY_DEFAULT_MAX_TOKENS = 2048  # 转接默认最大 token 数
+
 # ====================== 启动逻辑 ======================
 
 def open_browser():
@@ -56,6 +60,8 @@ if __name__ == '__main__':
         'AI_MAX_TOKENS': AI_MAX_TOKENS,
         'URL_FETCH_TIMEOUT': URL_FETCH_TIMEOUT,
         'URL_MAX_LENGTH': URL_MAX_LENGTH,
+        'RELAY_TIMEOUT': RELAY_TIMEOUT,
+        'RELAY_DEFAULT_MAX_TOKENS': RELAY_DEFAULT_MAX_TOKENS,
     }
 
     # 创建 Flask 应用并初始化数据库

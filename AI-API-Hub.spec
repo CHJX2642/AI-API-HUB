@@ -3,10 +3,8 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [('templates', 'templates'), ('static', 'static')]
 binaries = []
-hiddenimports = ['flask', 'flask_cors', 'sqlite3', 'docx', 'PyPDF2', 'openpyxl', 'bs4', 'lxml', 'requests']
+hiddenimports = ['flask', 'sqlite3', 'docx', 'PyPDF2', 'openpyxl', 'bs4', 'lxml', 'requests']
 tmp_ret = collect_all('flask')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('flask_cors')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
@@ -44,5 +42,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['C:\\Users\\21023\\Documents\\Code Projects\\ai-api-hub\\icon.ico'],
+    icon=['C:\\Users\\21023\\Documents\\Code_Projects\\ai-api-hub\\icon.ico'],
 )
