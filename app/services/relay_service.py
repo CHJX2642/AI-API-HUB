@@ -6,6 +6,7 @@
 import json                            # JSON 序列化/反序列化
 import uuid                            # 生成唯一请求 ID
 import time                            # 时间戳
+import ssl                             # SSL 上下文，用于调试时跳过证书验证
 import urllib.request                  # HTTP 请求，调用下游厂商 API
 import urllib.error                    # HTTP 错误处理
 from flask import current_app          # Flask 应用上下文，读取配置
@@ -756,10 +757,16 @@ def forward_to_provider(url, body, headers, timeout=None):
     """
     if timeout is None:
         timeout = current_app.config.get('RELAY_TIMEOUT', 120)
+    # SSL 上下文：调试时跳过证书验证
+    verify_ssl = current_app.config.get('RELAY_VERIFY_SSL', True)
+    ssl_context = None if verify_ssl else ssl.create_default_context()
+    if not verify_ssl:
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
     try:
         request_body = json.dumps(body, ensure_ascii=False).encode('utf-8')
         req = urllib.request.Request(url, data=request_body, headers=headers)
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout, context=ssl_context) as resp:
             resp_body = json.loads(resp.read().decode('utf-8'))
         return resp_body, None
     except urllib.error.HTTPError as e:
@@ -771,10 +778,13 @@ def forward_to_provider(url, body, headers, timeout=None):
             error_msg = error_body[:300]
         return None, f'厂商 API 返回错误 ({e.code}): {error_msg}'
     except urllib.error.URLError as e:
+        print(f"[forward] ✗ URLError to {url[:60]}: {e.reason}", flush=True)
         return None, f'无法连接到厂商 API: {str(e.reason)}'
     except json.JSONDecodeError:
+        print(f"[forward] ✗ JSONDecodeError from {url[:60]}", flush=True)
         return None, '厂商返回的不是有效 JSON'
     except Exception as e:
+        print(f"[forward] ✗ Exception to {url[:60]}: {e}", flush=True)
         return None, f'请求失败: {str(e)}'
 
 
@@ -817,6 +827,7 @@ def format_responses_sse(event_type, resp_id='', msg_id='', model='',
                 reasoning_item_added / reasoning_part_added / reasoning_delta /
                 reasoning_part_done / reasoning_item_done
     """
+    # OpenAI Responses SSE 不需要 event: 行，只用 data: 行
     if event_type == 'created':
         chunk = {
             'type': 'response.created',
@@ -935,12 +946,29 @@ def format_responses_sse(event_type, resp_id='', msg_id='', model='',
     return f'data: {json.dumps(chunk, ensure_ascii=False)}\n\n'
 
 
+# Anthropic SSE event_type → SSE event 行名称映射
+_ANTHROPIC_SSE_EVENT_MAP = {
+    'message_start':        'message_start',
+    'content_block_start':  'content_block_start',
+    'content_block_delta':  'content_block_delta',
+    'content_block_stop':   'content_block_stop',
+    'message_delta':        'message_delta',
+    'message_stop':         'message_stop',
+    'thinking_block_start': 'content_block_start',
+    'thinking_delta':       'content_block_delta',
+    'thinking_block_stop':  'content_block_stop',
+    'ping':                 'ping',
+}
+
+
 def format_anthropic_sse(event_type, content='', finish_reason=None, model=''):
     """Anthropic Messages SSE 格式 — 生成完整的流式事件序列
     event_type: message_start / content_block_start / content_block_delta /
                 content_block_stop / message_delta / message_stop /
                 thinking_block_start / thinking_delta / thinking_block_stop
     """
+    # 获取 SSE event 行名称
+    sse_event = _ANTHROPIC_SSE_EVENT_MAP.get(event_type, 'message')
     if event_type == 'message_start':
         chunk = {
             'type': 'message_start',
@@ -993,8 +1021,8 @@ def format_anthropic_sse(event_type, content='', finish_reason=None, model=''):
     elif event_type == 'thinking_block_stop':
         chunk = {'type': 'content_block_stop', 'index': 0}
     else:
-        return f'data: {{}}\n\n'
-    return f'data: {json.dumps(chunk, ensure_ascii=False)}\n\n'
+        return f'event: {sse_event}\ndata: {{}}\n\n'
+    return f'event: {sse_event}\ndata: {json.dumps(chunk, ensure_ascii=False)}\n\n'
 
 
 # ====================== 主入口 ======================

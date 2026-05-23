@@ -42,5 +42,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['C:\\Users\\21023\\Documents\\Code_Projects\\ai-api-hub\\icon.ico'],
+    icon=['c:\\Users\\21023\\Documents\\Code_Projects\\ai-api-hub\\icon.ico'],
 )

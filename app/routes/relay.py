@@ -80,6 +80,12 @@ def resolve_output_protocol(key_protocol=None):
 
 # ====================== OpenAI Chat Completions ======================
 
+@bp.route('/v1/v1/chat/completions', methods=['POST'])
+def relay_chat_completions_legacy():
+    """兼容 /v1/v1/chat/completions 路径"""
+    return relay_chat_completions()
+
+
 @bp.route('/v1/chat/completions', methods=['POST'])
 def relay_chat_completions():
     """OpenAI Chat Completions 转接端点
@@ -113,6 +119,12 @@ def relay_chat_completions():
 
 
 # ====================== OpenAI Responses API ======================
+
+@bp.route('/v1/v1/responses', methods=['POST'])
+def relay_responses_legacy():
+    """兼容 /v1/v1/responses 路径"""
+    return relay_responses()
+
 
 @bp.route('/v1/responses', methods=['POST'])
 def relay_responses():
@@ -171,16 +183,88 @@ def relay_messages():
     sanitize_data(data)                    # 清洗 "[undefined]" 等无效值
     output_protocol = resolve_output_protocol(key_protocol)
 
+    # DEBUG: 记录请求信息
+    print(f"[relay/messages] model={data.get('model')}, stream={data.get('stream')}, "
+          f"msg_count={len(data.get('messages',[]))}, output_protocol={output_protocol}",
+          flush=True)
+
     # 流式处理
     if data.get('stream'):
         return handle_anthropic_stream(data, output_protocol)
 
     # 非流式处理
     result, status = handle_relay(data, 'anthropic', output_protocol)
-    return jsonify(result), status
+    resp = jsonify(result)
+    resp.headers['anthropic-version'] = '2023-06-01'
+    return resp, status
+
+
+# 兼容用户误配置：ANTHROPIC_BASE_URL 带了 /v1 后缀导致请求路径变成 /v1/v1/messages
+@bp.route('/v1/v1/messages', methods=['POST'])
+def relay_messages_legacy():
+    """兼容 /v1/v1/messages 路径重定向到正确端点"""
+    return relay_messages()
+
+
+@bp.route('/v1/v1/messages/count_tokens', methods=['POST'])
+def relay_count_tokens_legacy():
+    """兼容 /v1/v1/messages/count_tokens 路径"""
+    return relay_count_tokens()
+
+
+@bp.route('/v1/messages/count_tokens', methods=['POST'])
+def relay_count_tokens():
+    """Anthropic Messages count_tokens 端点
+    Claude Code 使用此端点做上下文 token 计数管理
+    """
+    # 转接开关
+    disabled = check_relay_enabled()
+    if disabled:
+        return disabled
+
+    # 认证
+    ok, key_protocol = authenticate_relay(request.headers)
+    if not ok:
+        return jsonify({'error': key_protocol}), 401
+
+    # 解析请求
+    data, err = get_request_json()
+    if err:
+        return err
+
+    # 简单估算：字符数 / 4 ≈ token 数（适用于中英文混合场景）
+    total_chars = 0
+    messages = data.get('messages', [])
+    system = data.get('system', '')
+    if isinstance(system, str):
+        total_chars += len(system)
+    elif isinstance(system, list):
+        for item in system:
+            if isinstance(item, dict) and item.get('type') == 'text':
+                total_chars += len(item.get('text', ''))
+    for msg in messages:
+        content = msg.get('content', '')
+        if isinstance(content, str):
+            total_chars += len(content)
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get('type') == 'text':
+                    total_chars += len(block.get('text', ''))
+
+    estimated_tokens = max(1, total_chars // 4)
+
+    resp = jsonify({'input_tokens': estimated_tokens})
+    resp.headers['anthropic-version'] = '2023-06-01'
+    return resp, 200
 
 
 # ====================== 模型列表（OpenAI 格式） ======================
+
+@bp.route('/v1/v1/models', methods=['GET'])
+def relay_models_legacy():
+    """兼容 /v1/v1/models 路径"""
+    return relay_models()
+
 
 @bp.route('/v1/models', methods=['GET'])
 def relay_models():
@@ -298,11 +382,22 @@ def handle_anthropic_stream(data, output_protocol=None):
     model_name = internal['model']
     provider_info, error = resolve_model(model_name)
     if error:
-        return jsonify({'error': error}), 404
+        print(f"[stream] ✗ model not found: {model_name}", flush=True)
+        # 以 SSE 格式返回错误，避免客户端死等
+        def err_gen():
+            err_obj = json.dumps({'type': 'error', 'error': {'type': 'api_error', 'message': error}}, ensure_ascii=False)
+            yield f'event: error\ndata: {err_obj}\n\n'
+        return Response(stream_with_context(err_gen()), content_type='text/event-stream',
+            headers={'Cache-Control': 'no-cache', 'anthropic-version': '2023-06-01'})
 
     valid, err_msg = validate_relay_request(internal, provider_info)
     if not valid:
-        return jsonify({'error': err_msg}), 400
+        print(f"[stream] ✗ validation failed: {err_msg}", flush=True)
+        def err_gen():
+            err_obj = json.dumps({'type': 'error', 'error': {'type': 'api_error', 'message': err_msg}}, ensure_ascii=False)
+            yield f'event: error\ndata: {err_obj}\n\n'
+        return Response(stream_with_context(err_gen()), content_type='text/event-stream',
+            headers={'Cache-Control': 'no-cache', 'anthropic-version': '2023-06-01'})
 
     adapter = get_adapter(provider_info['provider_name'])
     internal = adapter.prepare_request(internal, data, 'anthropic')
@@ -317,6 +412,7 @@ def handle_anthropic_stream(data, output_protocol=None):
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
             'X-Accel-Buffering': 'no',
+            'anthropic-version': '2023-06-01',
         }
     )
 
@@ -327,6 +423,7 @@ def _stream_generator(internal, provider_info, output_protocol):
     支持 DeepSeek/Mimo 等模型的 reasoning_content（思考过程）翻译"""
     import urllib.request
     import urllib.error
+    import ssl
 
     internal['stream'] = True
     provider_format = provider_info['api_format']
@@ -347,6 +444,10 @@ def _stream_generator(internal, provider_info, output_protocol):
         request_body = json.dumps(req_body, ensure_ascii=False).encode('utf-8')
         req = urllib.request.Request(provider_info['api_url'], data=request_body, headers=req_headers)
 
+        # DEBUG
+        print(f"[stream] → {provider_info['provider_name']}/{provider_info['model_id']} "
+              f"via {provider_format} to {provider_info['api_url'][:60]}", flush=True)
+
         last_finish = None           # 结束标记
         reasoning_buf = []           # 累积 reasoning 文本（所有协议共享）
 
@@ -366,7 +467,16 @@ def _stream_generator(internal, provider_info, output_protocol):
             thinking_block_started = False
             yield format_anthropic_sse('message_start', model=model_name)
 
-        with urllib.request.urlopen(req, timeout=current_app.config.get('RELAY_TIMEOUT', 120)) as resp:
+        # SSL 上下文：调试时跳过证书验证
+        verify_ssl = current_app.config.get('RELAY_VERIFY_SSL', True)
+        ssl_ctx = None if verify_ssl else ssl.create_default_context()
+        if not verify_ssl:
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl.CERT_NONE
+
+        with urllib.request.urlopen(req, timeout=current_app.config.get('RELAY_TIMEOUT', 120), context=ssl_ctx) as resp:
+            print(f"[stream] ← upstream response started, status={resp.status}", flush=True)
+            chunk_count = 0
             for line_bytes in resp:
                 line = line_bytes.decode('utf-8').rstrip('\n').rstrip('\r')
 
@@ -481,6 +591,8 @@ def _stream_generator(internal, provider_info, output_protocol):
                     if finish:
                         last_finish = finish
 
+                chunk_count += 1
+
         # ================================================================
         # 完成事件序列
         # ================================================================
@@ -516,14 +628,29 @@ def _stream_generator(internal, provider_info, output_protocol):
                 finish_reason=last_finish or 'end_turn')
             yield format_anthropic_sse('message_stop')
 
-        yield 'data: [DONE]\n\n'
+        # OpenAI / Responses 协议用 [DONE] 标记流结束，Anthropic 协议已通过 message_stop 结束
+        if output_protocol != 'anthropic':
+            yield 'data: [DONE]\n\n'
+
+        print(f"[stream] ← done, chunks={chunk_count}, protocol={output_protocol}", flush=True)
+
 
     except urllib.error.HTTPError as e:
         error_body = e.read().decode('utf-8', errors='ignore')
+        print(f"[stream] ✗ HTTP {e.code}: {error_body[:200]}", flush=True)
         safe_msg = json.dumps({'error': f'厂商 API 错误 ({e.code}): {error_body[:200]}'}, ensure_ascii=False)
-        yield f'data: {safe_msg}\n\n'
-        yield 'data: [DONE]\n\n'
+        if output_protocol == 'anthropic':
+            err_obj = json.dumps({'type': 'error', 'error': {'type': 'api_error', 'message': f'厂商 API 错误 ({e.code}): {error_body[:200]}'}}, ensure_ascii=False)
+            yield f'event: error\ndata: {err_obj}\n\n'
+        else:
+            yield f'data: {safe_msg}\n\n'
+            yield 'data: [DONE]\n\n'
     except Exception as e:
+        print(f"[stream] ✗ Exception: {e}", flush=True)
         safe_msg = json.dumps({'error': str(e)}, ensure_ascii=False)
-        yield f'data: {safe_msg}\n\n'
-        yield 'data: [DONE]\n\n'
+        if output_protocol == 'anthropic':
+            err_obj = json.dumps({'type': 'error', 'error': {'type': 'api_error', 'message': str(e)}}, ensure_ascii=False)
+            yield f'event: error\ndata: {err_obj}\n\n'
+        else:
+            yield f'data: {safe_msg}\n\n'
+            yield 'data: [DONE]\n\n'
