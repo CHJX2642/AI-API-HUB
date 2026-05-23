@@ -194,7 +194,19 @@ def relay_messages():
 
     # 非流式处理
     result, status = handle_relay(data, 'anthropic', output_protocol)
-    resp = jsonify(result)
+    # 错误响应转为 Anthropic 错误格式
+    if status >= 400:
+        err_msg = result.get('error', '未知错误')
+        anthropic_error = {
+            'type': 'error',
+            'error': {
+                'type': 'api_error',
+                'message': err_msg,
+            }
+        }
+        resp = jsonify(anthropic_error)
+    else:
+        resp = jsonify(result)
     resp.headers['anthropic-version'] = '2023-06-01'
     return resp, status
 
@@ -444,9 +456,12 @@ def _stream_generator(internal, provider_info, output_protocol):
         request_body = json.dumps(req_body, ensure_ascii=False).encode('utf-8')
         req = urllib.request.Request(provider_info['api_url'], data=request_body, headers=req_headers)
 
-        # DEBUG
+        # DEBUG: 打印请求摘要
+        msg_count = len(req_body.get('messages', []))
+        mt = req_body.get('max_tokens', '?')
         print(f"[stream] → {provider_info['provider_name']}/{provider_info['model_id']} "
-              f"via {provider_format} to {provider_info['api_url'][:60]}", flush=True)
+              f"via {provider_format} msgs={msg_count} max_tokens={mt} "
+              f"url={provider_info['api_url'][:80]}", flush=True)
 
         last_finish = None           # 结束标记
         reasoning_buf = []           # 累积 reasoning 文本（所有协议共享）
@@ -465,6 +480,8 @@ def _stream_generator(internal, provider_info, output_protocol):
         elif output_protocol == 'anthropic':
             text_block_started = False
             thinking_block_started = False
+            tool_use_blocks = {}       # {openai_index: {'id':...,'name':...,'anthro_index':...,'started':bool}}
+            next_block_index = 0       # Anthropic 内容块索引计数器
             yield format_anthropic_sse('message_start', model=model_name)
 
         # SSL 上下文：调试时跳过证书验证
@@ -477,8 +494,14 @@ def _stream_generator(internal, provider_info, output_protocol):
         with urllib.request.urlopen(req, timeout=current_app.config.get('RELAY_TIMEOUT', 120), context=ssl_ctx) as resp:
             print(f"[stream] ← upstream response started, status={resp.status}", flush=True)
             chunk_count = 0
+            raw_line_count = 0       # 上游返回的总行数（含空行和 event 行）
             for line_bytes in resp:
                 line = line_bytes.decode('utf-8').rstrip('\n').rstrip('\r')
+                raw_line_count += 1
+
+                # DEBUG: 打印上游响应的前几行，方便排查
+                if raw_line_count <= 3 and line:
+                    print(f"[stream]   raw[{raw_line_count}]: {line[:200]}", flush=True)
 
                 if not line or not line.startswith('data:'):
                     continue
@@ -492,7 +515,16 @@ def _stream_generator(internal, provider_info, output_protocol):
                 except json.JSONDecodeError:
                     continue
 
+                # DEBUG: 打印前几个有效 chunk 的类型
+                if chunk_count < 3:
+                    chunk_type = chunk.get('type', chunk.get('object', '?'))
+                    print(f"[stream]   chunk[{chunk_count}]: type={chunk_type}", flush=True)
+
                 # 解析厂商 SSE chunk
+                raw_tool_calls = None  # OpenAI 格式的 tool_calls delta
+                anthropic_tool_start = None  # Anthropic 格式的 tool_use content_block_start
+                anthropic_tool_delta = None  # Anthropic 格式的 input_json_delta
+
                 if provider_format == 'openai':
                     chunk_id = chunk.get('id', '')
                     choices = chunk.get('choices', [])
@@ -503,6 +535,7 @@ def _stream_generator(internal, provider_info, output_protocol):
                     finish = choices[0].get('finish_reason')
                     role = delta.get('role', '')
                     reasoning = delta.get('reasoning_content', '') or ''
+                    raw_tool_calls = delta.get('tool_calls')  # 提取工具调用
                 else:
                     chunk_id = ''
                     role = ''
@@ -514,6 +547,10 @@ def _stream_generator(internal, provider_info, output_protocol):
                             reasoning = delta_block.get('thinking', '') or ''
                         elif delta_block.get('type') == 'text_delta':
                             content = delta_block.get('text', '') or ''
+                        elif delta_block.get('type') == 'input_json_delta':
+                            # Anthropic 上游的工具调用参数增量
+                            content = ''
+                            anthropic_tool_delta = delta_block.get('partial_json', '') or ''
                         else:
                             content = delta_block.get('text', '') or ''
                         finish = None
@@ -521,6 +558,13 @@ def _stream_generator(internal, provider_info, output_protocol):
                         content = ''
                         finish = chunk.get('delta', {}).get('stop_reason', 'stop')
                     elif event_type == 'content_block_start':
+                        cb = chunk.get('content_block', {})
+                        if cb.get('type') == 'tool_use':
+                            # Anthropic 上游的工具调用开始
+                            anthropic_tool_start = {
+                                'id': cb.get('id', ''),
+                                'name': cb.get('name', ''),
+                            }
                         content = ''
                         finish = None
                     else:
@@ -530,8 +574,9 @@ def _stream_generator(internal, provider_info, output_protocol):
                 if reasoning:
                     reasoning_buf.append(reasoning)
 
-                # 跳过纯空 delta
-                has_any = bool(content or reasoning)
+                # 跳过纯空 delta（同时检查是否有工具调用）
+                has_any = bool(content or reasoning or raw_tool_calls
+                              or anthropic_tool_start or anthropic_tool_delta)
                 if not has_any and not finish and not (output_protocol == 'chat' and role):
                     continue
 
@@ -572,22 +617,104 @@ def _stream_generator(internal, provider_info, output_protocol):
                         chat_role_sent = True
                     yield format_chat_sse(chunk_id, content, finish,
                         role=sent_role, model=model_name,
-                        reasoning_content=reasoning)
+                        reasoning_content=reasoning,
+                        tool_calls=raw_tool_calls)
 
                 elif output_protocol == 'anthropic':
+                    # --- reasoning / thinking ---
                     if reasoning:
                         if not thinking_block_started:
-                            yield format_anthropic_sse('thinking_block_start')
+                            thinking_block_index = next_block_index
+                            next_block_index += 1
+                            yield format_anthropic_sse('thinking_block_start',
+                                block_index=thinking_block_index)
                             thinking_block_started = True
-                        yield format_anthropic_sse('thinking_delta', content=reasoning)
+                        yield format_anthropic_sse('thinking_delta',
+                            content=reasoning, block_index=thinking_block_index)
+
+                    # --- 普通文本 ---
                     if content:
                         if thinking_block_started:
-                            yield format_anthropic_sse('thinking_block_stop')
+                            yield format_anthropic_sse('thinking_block_stop',
+                                block_index=thinking_block_index)
                             thinking_block_started = False
                         if not text_block_started:
-                            yield format_anthropic_sse('content_block_start')
+                            text_block_index = next_block_index
+                            next_block_index += 1
+                            yield format_anthropic_sse('content_block_start',
+                                block_index=text_block_index)
                             text_block_started = True
-                        yield format_anthropic_sse('content_block_delta', content=content)
+                        yield format_anthropic_sse('content_block_delta',
+                            content=content, block_index=text_block_index)
+
+                    # --- 工具调用（OpenAI 格式 → Anthropic tool_use） ---
+                    if raw_tool_calls:
+                        # 关闭 thinking block（如果还在）
+                        if thinking_block_started:
+                            yield format_anthropic_sse('thinking_block_stop',
+                                block_index=thinking_block_index)
+                            thinking_block_started = False
+                        for tc in raw_tool_calls:
+                            tc_index = tc.get('index', 0)
+                            if tc_index not in tool_use_blocks:
+                                # 新工具调用：分配 Anthropic 内容块索引
+                                tool_use_blocks[tc_index] = {
+                                    'id': tc.get('id', ''),
+                                    'name': '',
+                                    'anthro_index': next_block_index,
+                                    'started': False,
+                                }
+                                next_block_index += 1
+                            tu = tool_use_blocks[tc_index]
+                            # 更新工具名（OpenAI 在第一个 chunk 里带 name）
+                            fn = tc.get('function', {})
+                            if fn.get('name'):
+                                tu['name'] = fn['name']
+                            if tc.get('id') and not tu['started']:
+                                # 发送 tool_use content_block_start
+                                tu['started'] = True
+                                yield format_anthropic_sse('tool_use_block_start',
+                                    block_index=tu['anthro_index'],
+                                    tool_use_info={'id': tu['id'], 'name': tu['name']})
+                            # 发送参数增量
+                            args_delta = fn.get('arguments', '') or ''
+                            if args_delta:
+                                yield format_anthropic_sse('tool_use_delta',
+                                    content=args_delta,
+                                    block_index=tu['anthro_index'])
+
+                    # --- Anthropic 格式上游的 tool_use ---
+                    if anthropic_tool_start:
+                        # 关闭 thinking block（如果还在）
+                        if thinking_block_started:
+                            yield format_anthropic_sse('thinking_block_stop',
+                                block_index=thinking_block_index)
+                            thinking_block_started = False
+                        tu_id = anthropic_tool_start['id']
+                        tu_name = anthropic_tool_start['name']
+                        # 用 id 作为 key（Anthropic 格式只有一个 tool_use 在流中）
+                        tool_key = f'anthropic_{tu_id}'
+                        if tool_key not in tool_use_blocks:
+                            tool_use_blocks[tool_key] = {
+                                'id': tu_id,
+                                'name': tu_name,
+                                'anthro_index': next_block_index,
+                                'started': True,
+                            }
+                            next_block_index += 1
+                            yield format_anthropic_sse('tool_use_block_start',
+                                block_index=tool_use_blocks[tool_key]['anthro_index'],
+                                tool_use_info={'id': tu_id, 'name': tu_name})
+
+                    if anthropic_tool_delta:
+                        # 找到当前活跃的 tool_use 块并发送 delta
+                        for tu in tool_use_blocks.values():
+                            if tu['started']:
+                                yield format_anthropic_sse('tool_use_delta',
+                                    content=anthropic_tool_delta,
+                                    block_index=tu['anthro_index'])
+                                break
+
                     if finish:
                         last_finish = finish
 
@@ -620,10 +747,18 @@ def _stream_generator(internal, provider_info, output_protocol):
             yield format_responses_sse('completed', resp_id=resp_id, model=model_name)
 
         elif output_protocol == 'anthropic':
+            # 关闭所有已启动的内容块
             if thinking_block_started:
-                yield format_anthropic_sse('thinking_block_stop')
+                yield format_anthropic_sse('thinking_block_stop',
+                    block_index=thinking_block_index)
             if text_block_started:
-                yield format_anthropic_sse('content_block_stop')
+                yield format_anthropic_sse('content_block_stop',
+                    block_index=text_block_index)
+            # 关闭所有已启动的 tool_use 块
+            for tu in tool_use_blocks.values():
+                if tu['started']:
+                    yield format_anthropic_sse('tool_use_block_stop',
+                        block_index=tu['anthro_index'])
             yield format_anthropic_sse('message_delta',
                 finish_reason=last_finish or 'end_turn')
             yield format_anthropic_sse('message_stop')
@@ -632,12 +767,20 @@ def _stream_generator(internal, provider_info, output_protocol):
         if output_protocol != 'anthropic':
             yield 'data: [DONE]\n\n'
 
-        print(f"[stream] ← done, chunks={chunk_count}, protocol={output_protocol}", flush=True)
+        # 输出完成日志
+        full_reasoning = ''.join(reasoning_buf)
+        tool_count = len(tool_use_blocks) if output_protocol == 'anthropic' else 0
+        print(f"[stream] ← done, chunks={chunk_count}, raw_lines={raw_line_count}, "
+              f"protocol={output_protocol}, reason_len={len(full_reasoning)}, "
+              f"tool_uses={tool_count}, last_finish={last_finish}", flush=True)
+        if chunk_count == 0:
+            print(f"[stream] ⚠ WARNING: zero content chunks from upstream! "
+                  f"Possible upstream error or empty response.", flush=True)
 
 
     except urllib.error.HTTPError as e:
         error_body = e.read().decode('utf-8', errors='ignore')
-        print(f"[stream] ✗ HTTP {e.code}: {error_body[:200]}", flush=True)
+        print(f"[stream] ✗ HTTP {e.code} from {provider_info['api_url'][:80]}: {error_body[:300]}", flush=True)
         safe_msg = json.dumps({'error': f'厂商 API 错误 ({e.code}): {error_body[:200]}'}, ensure_ascii=False)
         if output_protocol == 'anthropic':
             err_obj = json.dumps({'type': 'error', 'error': {'type': 'api_error', 'message': f'厂商 API 错误 ({e.code}): {error_body[:200]}'}}, ensure_ascii=False)
@@ -646,7 +789,7 @@ def _stream_generator(internal, provider_info, output_protocol):
             yield f'data: {safe_msg}\n\n'
             yield 'data: [DONE]\n\n'
     except Exception as e:
-        print(f"[stream] ✗ Exception: {e}", flush=True)
+        print(f"[stream] ✗ Exception from {provider_info['api_url'][:80]}: {type(e).__name__}: {e}", flush=True)
         safe_msg = json.dumps({'error': str(e)}, ensure_ascii=False)
         if output_protocol == 'anthropic':
             err_obj = json.dumps({'type': 'error', 'error': {'type': 'api_error', 'message': str(e)}}, ensure_ascii=False)

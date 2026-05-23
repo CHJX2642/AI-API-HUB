@@ -39,7 +39,7 @@ URL_MAX_LENGTH = 100000        # 网页内容最大字符数
 
 # API 转接配置
 RELAY_TIMEOUT = 120            # 转接请求超时（秒）
-RELAY_DEFAULT_MAX_TOKENS = 2048  # 转接默认最大 token 数
+RELAY_DEFAULT_MAX_TOKENS = 4096     # 转接默认最大 token 数
 RELAY_VERIFY_SSL = False       # SSL 证书验证（调试时设 False，正式使用设 True）
 
 # ====================== 启动逻辑 ======================

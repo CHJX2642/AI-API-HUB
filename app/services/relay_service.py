@@ -390,7 +390,8 @@ def responses_to_internal(data):
 
 
 def anthropic_to_internal(data):
-    """Anthropic Messages 请求 → 内部格式"""
+    """Anthropic Messages 请求 → 内部格式
+    将 Anthropic tool_use/tool_result 转换为 OpenAI tool_calls/role:tool 格式"""
     messages = []
     # 处理 system 字段（Anthropic 支持 string 或 array）
     system = data.get('system', '')
@@ -411,16 +412,17 @@ def anthropic_to_internal(data):
         role = msg.get('role', 'user')
         content = msg.get('content', '')
 
-        # Anthropic 的 content 可能是字符串或内容块数组
         if isinstance(content, list):      # 多模态内容块数组
-            # 先提取纯文本部分
             text_parts = []
             image_parts = []
+            tool_use_blocks = []           # Anthropic tool_use 块
+            tool_result_blocks = []        # Anthropic tool_result 块
             for block in content:
                 if isinstance(block, dict):
-                    if block.get('type') == 'text':
+                    bt = block.get('type', '')
+                    if bt == 'text':
                         text_parts.append(block.get('text', ''))
-                    elif block.get('type') == 'image':
+                    elif bt == 'image':
                         # Anthropic image → OpenAI image_url 格式
                         source = block.get('source', {})
                         if source.get('type') == 'base64':
@@ -430,12 +432,72 @@ def anthropic_to_internal(data):
                                 'type': 'image_url',
                                 'image_url': {'url': f'data:{mime};base64,{b64}'}
                             })
-                    elif block.get('type') == 'tool_use':
-                        image_parts.append(block)
-                    elif block.get('type') == 'tool_result':
-                        image_parts.append(block)
+                    elif bt == 'tool_use':
+                        tool_use_blocks.append(block)
+                    elif bt == 'tool_result':
+                        tool_result_blocks.append(block)
 
-            if image_parts:                # 有图片，构建多模态 content
+            # --- 处理 tool_use（assistant）→ OpenAI tool_calls ---
+            if tool_use_blocks:
+                # 构建 OpenAI tool_calls 格式
+                openai_tool_calls = []
+                for tu in tool_use_blocks:
+                    openai_tool_calls.append({
+                        'id': tu.get('id', ''),
+                        'type': 'function',
+                        'function': {
+                            'name': tu.get('name', ''),
+                            'arguments': json.dumps(tu.get('input', {}), ensure_ascii=False)
+                        }
+                    })
+                msg_content = '\n'.join(text_parts) if text_parts else None
+                messages.append({
+                    'role': 'assistant',
+                    'content': msg_content,
+                    'tool_calls': openai_tool_calls,
+                })
+                # tool_result 在另一条 user 消息里，继续处理
+                if tool_result_blocks:
+                    for tr in tool_result_blocks:
+                        tr_content = tr.get('content', '')
+                        if isinstance(tr_content, list):
+                            tr_text = '\n'.join(
+                                b.get('text', '') for b in tr_content
+                                if isinstance(b, dict) and b.get('type') == 'text'
+                            )
+                        elif isinstance(tr_content, str):
+                            tr_text = tr_content
+                        else:
+                            tr_text = str(tr_content)
+                        messages.append({
+                            'role': 'tool',
+                            'tool_call_id': tr.get('tool_use_id', ''),
+                            'content': tr_text,
+                        })
+                continue  # 已处理完当前消息
+
+            # --- 处理独立的 tool_result（user 消息中的 tool_result 块） ---
+            if tool_result_blocks:
+                for tr in tool_result_blocks:
+                    tr_content = tr.get('content', '')
+                    if isinstance(tr_content, list):
+                        tr_text = '\n'.join(
+                            b.get('text', '') for b in tr_content
+                            if isinstance(b, dict) and b.get('type') == 'text'
+                        )
+                    elif isinstance(tr_content, str):
+                        tr_text = tr_content
+                    else:
+                        tr_text = str(tr_content)
+                    messages.append({
+                        'role': 'tool',
+                        'tool_call_id': tr.get('tool_use_id', ''),
+                        'content': tr_text,
+                    })
+                continue  # 已处理完当前消息
+
+            # --- 普通多模态（图片 + 文本） ---
+            if image_parts:
                 combined = [{'type': 'text', 'text': '\n'.join(text_parts)}] if text_parts else []
                 combined.extend(image_parts)
                 messages.append({'role': role, 'content': combined})
@@ -789,10 +851,11 @@ def forward_to_provider(url, body, headers, timeout=None):
 
 
 def format_chat_sse(msg_id, content, finish_reason, role=None, model='',
-                    reasoning_content=''):
+                    reasoning_content='', tool_calls=None):
     """OpenAI Chat SSE 格式
     参数:
         reasoning_content: DeepSeek-R1/Mimo 等模型的思考过程文本
+        tool_calls: 工具调用 delta 列表（OpenAI 格式，直接透传）
     """
     delta = {}
     if role:
@@ -803,6 +866,9 @@ def format_chat_sse(msg_id, content, finish_reason, role=None, model='',
     # reasoning_content 保留在原位（OpenAI 非标准扩展，但 DeepSeek 客户端兼容）
     if reasoning_content:
         delta['reasoning_content'] = reasoning_content
+    # tool_calls 透传（OpenAI 格式）
+    if tool_calls:
+        delta['tool_calls'] = tool_calls
     # finish chunk: delta 为空对象
     chunk = {
         'id': msg_id or f'chatcmpl-{uuid.uuid4().hex[:12]}',
@@ -957,16 +1023,22 @@ _ANTHROPIC_SSE_EVENT_MAP = {
     'thinking_block_start': 'content_block_start',
     'thinking_delta':       'content_block_delta',
     'thinking_block_stop':  'content_block_stop',
+    'tool_use_block_start': 'content_block_start',
+    'tool_use_delta':       'content_block_delta',
+    'tool_use_block_stop':  'content_block_stop',
     'ping':                 'ping',
 }
 
 
-def format_anthropic_sse(event_type, content='', finish_reason=None, model=''):
+def format_anthropic_sse(event_type, content='', finish_reason=None, model='',
+                         block_index=0, tool_use_info=None):
     """Anthropic Messages SSE 格式 — 生成完整的流式事件序列
     event_type: message_start / content_block_start / content_block_delta /
                 content_block_stop / message_delta / message_stop /
-                thinking_block_start / thinking_delta / thinking_block_stop
-    """
+                thinking_block_start / thinking_delta / thinking_block_stop /
+                tool_use_block_start / tool_use_delta / tool_use_block_stop
+    block_index: 内容块索引（thinking/text/tool_use 各有独立的 index）
+    tool_use_info: tool_use 块的元信息 {'id':..., 'name':...}"""
     # 获取 SSE event 行名称
     sse_event = _ANTHROPIC_SSE_EVENT_MAP.get(event_type, 'message')
     if event_type == 'message_start':
@@ -986,17 +1058,17 @@ def format_anthropic_sse(event_type, content='', finish_reason=None, model=''):
     elif event_type == 'content_block_start':
         chunk = {
             'type': 'content_block_start',
-            'index': 0,
+            'index': block_index,
             'content_block': {'type': 'text', 'text': ''}
         }
     elif event_type == 'content_block_delta':
         chunk = {
             'type': 'content_block_delta',
-            'index': 0,
+            'index': block_index,
             'delta': {'type': 'text_delta', 'text': content}
         }
     elif event_type == 'content_block_stop':
-        chunk = {'type': 'content_block_stop', 'index': 0}
+        chunk = {'type': 'content_block_stop', 'index': block_index}
     elif event_type == 'message_delta':
         chunk = {
             'type': 'message_delta',
@@ -1009,17 +1081,38 @@ def format_anthropic_sse(event_type, content='', finish_reason=None, model=''):
     elif event_type == 'thinking_block_start':
         chunk = {
             'type': 'content_block_start',
-            'index': 0,
+            'index': block_index,
             'content_block': {'type': 'thinking', 'thinking': ''}
         }
     elif event_type == 'thinking_delta':
         chunk = {
             'type': 'content_block_delta',
-            'index': 0,
+            'index': block_index,
             'delta': {'type': 'thinking_delta', 'thinking': content}
         }
     elif event_type == 'thinking_block_stop':
-        chunk = {'type': 'content_block_stop', 'index': 0}
+        chunk = {'type': 'content_block_stop', 'index': block_index}
+    # ---- tool_use block 事件（工具调用） ----
+    elif event_type == 'tool_use_block_start':
+        info = tool_use_info or {}
+        chunk = {
+            'type': 'content_block_start',
+            'index': block_index,
+            'content_block': {
+                'type': 'tool_use',
+                'id': info.get('id', ''),
+                'name': info.get('name', ''),
+                'input': {},
+            }
+        }
+    elif event_type == 'tool_use_delta':
+        chunk = {
+            'type': 'content_block_delta',
+            'index': block_index,
+            'delta': {'type': 'input_json_delta', 'partial_json': content}
+        }
+    elif event_type == 'tool_use_block_stop':
+        chunk = {'type': 'content_block_stop', 'index': block_index}
     else:
         return f'event: {sse_event}\ndata: {{}}\n\n'
     return f'event: {sse_event}\ndata: {json.dumps(chunk, ensure_ascii=False)}\n\n'
